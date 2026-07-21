@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import * as leaflet from 'leaflet';
+import queryString from 'query-string';
 import {
     copyState,
     mergeStates,
     areStatesEqual,
     stateToRawObject,
+    stateToUrl,
     stateFromParsedUrl,
     getCodeBlock,
     type MapState,
@@ -28,6 +30,7 @@ function baseState(): MapState {
         linkColor: '#ff0000',
         markerLabels: 'off',
         editMode: false,
+        enabledBoundaryLayerIds: [],
     };
 }
 
@@ -120,6 +123,24 @@ describe('areStatesEqual', () => {
         expect(areStatesEqual(null as any, s)).toBe(false);
         expect(areStatesEqual(s, null as any)).toBe(false);
     });
+
+    it('different enabledBoundaryLayerIds sets return false', () => {
+        const s1 = { ...baseState(), enabledBoundaryLayerIds: ['boundary-a'] };
+        const s2 = { ...baseState(), enabledBoundaryLayerIds: ['boundary-b'] };
+        expect(areStatesEqual(s1, s2)).toBe(false);
+    });
+
+    it('enabledBoundaryLayerIds differing only in order return true', () => {
+        const s1 = {
+            ...baseState(),
+            enabledBoundaryLayerIds: ['boundary-a', 'boundary-b'],
+        };
+        const s2 = {
+            ...baseState(),
+            enabledBoundaryLayerIds: ['boundary-b', 'boundary-a'],
+        };
+        expect(areStatesEqual(s1, s2)).toBe(true);
+    });
 });
 
 describe('stateToRawObject', () => {
@@ -172,6 +193,33 @@ describe('stateFromParsedUrl', () => {
     it('returns null mapCenter when lat/lng missing', () => {
         const parsed = stateFromParsedUrl({});
         expect(parsed.mapCenter).toBeNull();
+    });
+
+    it('enabledBoundaryLayerIds round-trips through the URL with multiple ids', () => {
+        const s = {
+            ...baseState(),
+            enabledBoundaryLayerIds: ['boundary-country', 'boundary-state'],
+        };
+        const parsed = stateFromParsedUrl(queryString.parse(stateToUrl(s)));
+        expect(parsed.enabledBoundaryLayerIds).toEqual([
+            'boundary-country',
+            'boundary-state',
+        ]);
+    });
+
+    it('enabledBoundaryLayerIds round-trips through the URL with a single id (query-string collapses to a scalar)', () => {
+        const s = {
+            ...baseState(),
+            enabledBoundaryLayerIds: ['boundary-state'],
+        };
+        const parsed = stateFromParsedUrl(queryString.parse(stateToUrl(s)));
+        expect(parsed.enabledBoundaryLayerIds).toEqual(['boundary-state']);
+    });
+
+    it('enabledBoundaryLayerIds defaults to an empty array when absent from the URL', () => {
+        const s = { ...baseState(), enabledBoundaryLayerIds: [] as string[] };
+        const parsed = stateFromParsedUrl(queryString.parse(stateToUrl(s)));
+        expect(parsed.enabledBoundaryLayerIds).toEqual([]);
     });
 });
 

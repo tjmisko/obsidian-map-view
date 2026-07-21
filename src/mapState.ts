@@ -28,6 +28,8 @@ export type MapState = {
     /** Marker labels */
     markerLabels: 'off' | 'left' | 'right';
     editMode: boolean;
+    /** Ids of the boundary layers toggled on for this view (order-insensitive) */
+    enabledBoundaryLayerIds: string[];
 };
 
 /** Fields that are deprecated */
@@ -50,6 +52,14 @@ export function mergeStates(
 }
 
 const xor = (a: any, b: any) => (a && !b) || (!a && b);
+
+/** Compares two id lists as sets, ignoring order (missing lists are treated as empty). */
+function areIdSetsEqual(a: string[] = [], b: string[] = []): boolean {
+    if (a.length !== b.length) return false;
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+    return sortedA.every((id, index) => id === sortedB[index]);
+}
 
 /*
  * Returns whether the two points represent different states *with regard to the given map*.
@@ -91,7 +101,11 @@ export function areStatesEqual(
         state1.followActiveNote == state2.followActiveNote &&
         state1.followMyLocation == state2.followMyLocation &&
         (state1.markerLabels || 'off') == (state2.markerLabels || 'off') &&
-        state1.editMode == state2.editMode
+        state1.editMode == state2.editMode &&
+        areIdSetsEqual(
+            state1.enabledBoundaryLayerIds,
+            state2.enabledBoundaryLayerIds,
+        )
     );
 }
 
@@ -108,6 +122,7 @@ export function stateToRawObject(state: MapState) {
         showLinks: state.showLinks,
         linkColor: state.linkColor,
         markerLabels: state.markerLabels,
+        enabledBoundaryLayerIds: state.enabledBoundaryLayerIds ?? [],
         ...(state.embeddedHeight && { embeddedHeight: state.embeddedHeight }),
     };
 }
@@ -138,6 +153,14 @@ export function stateFromParsedUrl(obj: any) {
                 : false,
         linkColor: obj?.linkColor,
         markerLabels: obj?.markerLabels,
+        // query-string collapses a single-element array to a scalar and omits
+        // an empty one, so normalize back to an array (defaulting to []).
+        enabledBoundaryLayerIds:
+            obj.enabledBoundaryLayerIds == null
+                ? []
+                : Array.isArray(obj.enabledBoundaryLayerIds)
+                  ? obj.enabledBoundaryLayerIds
+                  : [obj.enabledBoundaryLayerIds],
         ...(obj.embeddedHeight && {
             embeddedHeight: parseInt(obj.embeddedHeight),
         }),

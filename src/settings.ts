@@ -21,6 +21,7 @@ export type PluginSettings = {
     // all the fields of a full map state.
     savedStates: Partial<MapState[]>;
     displayRules: DisplayRule[];
+    boundaryLayers: BoundaryLayer[];
     zoomOnGoFromNote: number;
     mapSources: TileSource[];
     frontMatterKey: string;
@@ -131,6 +132,7 @@ export type MapControlsSections = {
     filtersDisplayed: boolean;
     viewDisplayed: boolean;
     linksDisplayed: boolean;
+    layersDisplayed: boolean;
     presetsDisplayed: boolean;
     editDisplayed: boolean;
 };
@@ -169,6 +171,27 @@ export const EMPTY_DISPLAY_RULE: Partial<DisplayRule> = {
     },
 };
 
+/**
+ * A toggleable, note-sourced map overlay for a single boundary "level"
+ * (e.g. countries, states, counties). Each level is an independently
+ * toggleable layer whose regions are matched by `query` and drawn with `style`.
+ */
+export type BoundaryLayer = {
+    // Stable id, e.g. 'boundary-state'
+    id: string;
+    // Human-readable name, e.g. 'States'
+    name: string;
+    // Query that selects the regions of this layer, e.g. 'tag:#boundary/state'
+    query: string;
+    // Nesting level, drives pane z-order: 0=country, 1=state, 2=county…
+    level: number;
+    enabledByDefault: boolean;
+    // Fine border style, e.g. { color, weight: 1, fillOpacity: 0 }
+    style: PathOptions;
+    // Reserved; hover highlighting is primarily CSS-driven
+    hoverStyle?: PathOptions;
+};
+
 export const DEFAULT_SETTINGS: PluginSettings = {
     defaultState: {
         name: 'Default',
@@ -187,6 +210,12 @@ export const DEFAULT_SETTINGS: PluginSettings = {
         linkColor: 'red',
         markerLabels: 'off',
         editMode: false,
+        // Seeded from the boundaryLayers below whose enabledByDefault is true.
+        enabledBoundaryLayerIds: [
+            'boundary-country',
+            'boundary-state',
+            'boundary-county',
+        ],
     },
     savedStates: [],
     displayRules: [
@@ -224,6 +253,44 @@ export const DEFAULT_SETTINGS: PluginSettings = {
             query: 'tag:#dogs',
             preset: false,
             iconDetails: { prefix: 'fas', icon: 'fa-paw' },
+        },
+    ],
+    boundaryLayers: [
+        {
+            id: 'boundary-country',
+            name: 'Countries',
+            query: 'tag:#boundary/country',
+            level: 0,
+            enabledByDefault: true,
+            style: {
+                color: '#c0392b',
+                weight: 1,
+                fillOpacity: 0,
+            },
+        },
+        {
+            id: 'boundary-state',
+            name: 'States',
+            query: 'tag:#boundary/state',
+            level: 1,
+            enabledByDefault: true,
+            style: {
+                color: '#2980b9',
+                weight: 1,
+                fillOpacity: 0,
+            },
+        },
+        {
+            id: 'boundary-county',
+            name: 'Counties',
+            query: 'tag:#boundary/county',
+            level: 2,
+            enabledByDefault: true,
+            style: {
+                color: '#27ae60',
+                weight: 1,
+                fillOpacity: 0,
+            },
         },
     ],
     zoomOnGoFromNote: 15,
@@ -276,6 +343,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
         filtersDisplayed: true,
         viewDisplayed: true,
         linksDisplayed: false,
+        layersDisplayed: false,
         presetsDisplayed: false,
         editDisplayed: false,
     },
