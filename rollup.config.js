@@ -48,7 +48,11 @@ export default {
             extensions: ['.mjs', '.js', '.json', '.node', '.ts', '.svelte'],
         }),
         typescript({
-            outDir: process.env.BUILD === 'development' ? '.' : './dist',
+            // Keep outDir on a subfolder (never the project root), otherwise
+            // @rollup/plugin-typescript auto-adds it to `exclude` and, when it
+            // equals `.`, excludes the whole project -> TS18003 "No inputs
+            // found". Rollup's own output.dir still controls where main.js lands.
+            outDir: './dist',
         }),
         image(),
         commonjs(),
