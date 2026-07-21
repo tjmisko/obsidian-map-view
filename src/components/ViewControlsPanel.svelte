@@ -150,6 +150,15 @@
         mapState.followMyLocation = !mapState.followMyLocation;
     }
 
+    // Toggle a boundary layer on/off for this view. We reassign the array (rather than push/splice) so Svelte 5
+    // reliably picks up the change and areStatesEqual sees a clean diff.
+    function toggleBoundaryLayer(id: string) {
+        const ids = mapState.enabledBoundaryLayerIds ?? [];
+        mapState.enabledBoundaryLayerIds = ids.includes(id)
+            ? ids.filter((existingId) => existingId !== id)
+            : [...ids, id];
+    }
+
     // We save the current state in previousState before calling updateControlsToState because we don't want this initial
     // call to trigger an auto fit
     previousState = view.getState();
@@ -442,6 +451,39 @@
                         title="Color used for lines (edges). Can be any valid HTML color, e.g. 'red' or '#bc11ff'."
                         style="width: 6em;"
                     />
+                </ViewCollapsibleSection>
+            {/if}
+            {#if settings.boundaryLayers?.length > 0}
+                <ViewCollapsibleSection
+                    headerText="Layers"
+                    expanded={settings.mapControlsSections.layersDisplayed}
+                    afterToggle={(expanded) =>
+                        setMapControl('layersDisplayed', expanded)}
+                >
+                    {#each settings.boundaryLayers as bl (bl.id)}
+                        <div class="graph-control-toggle-div">
+                            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                            <div
+                                class="checkbox-container"
+                                class:is-enabled={(
+                                    mapState.enabledBoundaryLayerIds ?? []
+                                ).includes(bl.id)}
+                                onclick={() => toggleBoundaryLayer(bl.id)}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={(
+                                        mapState.enabledBoundaryLayerIds ?? []
+                                    ).includes(bl.id)}
+                                    id={`boundary-layer-${bl.id}`}
+                                />
+                            </div>
+                            <label
+                                class="follow-label"
+                                for={`boundary-layer-${bl.id}`}>{bl.name}</label
+                            >
+                        </div>
+                    {/each}
                 </ViewCollapsibleSection>
             {/if}
             {#if viewSettings.showPresets}
