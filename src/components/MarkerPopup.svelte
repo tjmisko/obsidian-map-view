@@ -74,7 +74,7 @@
             header = fileName.endsWith('.md')
                 ? fileName.substring(0, fileName.lastIndexOf('.md'))
                 : fileName;
-            showElevation = true;
+            showElevation = geojsonHasElevation(layer);
         } else if (layer instanceof FloatingMarker) {
             header = layer.header;
         } else if (layer instanceof FloatingPath) {
@@ -97,7 +97,19 @@
         } else if (layer instanceof FloatingMarker) {
             snippet = layer.description;
         } else if (layer instanceof GeoJsonLayer) {
-            snippet = layer.text;
+            // For an inline geojson inside a markdown note, preview the note's
+            // own body (like a FileMarker) rather than the geojson properties.desc.
+            if (
+                layer.sourceType === 'geojson' &&
+                layer.file.extension === 'md' &&
+                layer.fileLine != null
+            ) {
+                const content = await app.vault.read(layer.file);
+                snippet = extractSnippet(content, 15, layer.fileLine);
+            } else {
+                // Standalone .geojson / gpx (or no file line): fall back to properties.desc.
+                snippet = layer.text;
+            }
         }
         if (snippet) {
             MarkdownRenderer.render(
@@ -110,22 +122,42 @@
         }
     }
 
+    /**
+     * Returns true only when the layer's geometry actually carries elevation (z)
+     * values. A GPX/LineString whose positions are `[lng, lat, ele]` qualifies; a
+     * region polygon (whose `coordinates` nest into rings rather than positions,
+     * so the "third element" is another `[lng, lat]` array, not a number) does
+     * not — this prevents rendering a blank elevation chart for such regions.
+     */
+    function geojsonHasElevation(layer: GeoJsonLayer | FloatingPath): boolean {
+        const geojson: any = layer?.geojson;
+        // Use the main layer coordinates, and if there is no such thing, use the first 'feature' in the collection
+        const coordinates =
+            geojson?.coordinates ??
+            (geojson?.features?.length > 0
+                ? geojson.features[0]?.geometry?.coordinates
+                : []);
+        return (
+            Array.isArray(coordinates) &&
+            coordinates.length > 0 &&
+            coordinates.every(
+                (coord: number[]) =>
+                    coord.length > 2 && typeof coord[2] === 'number',
+            )
+        );
+    }
+
     async function createElevationGraph(element: HTMLCanvasElement) {
+        // Bail out if the geometry has no real elevation data
+        if (!geojsonHasElevation(layer)) {
+            return;
+        }
         // Use the main layer coordinates, and if there is no such thing, use the first 'feature' in the collection
         const coordinates =
             layer.geojson.coordinates ??
             (layer.geojson?.features?.length > 0
                 ? layer.geojson.features[0]?.geometry?.coordinates
                 : []);
-        // Check that all coordinates have elevation data
-        if (
-            !coordinates ||
-            !coordinates.every(
-                (coord: number[]) => coord.length > 2 && coord[2] !== undefined,
-            )
-        ) {
-            return;
-        }
         let totalDistance = 0;
         let points: { x: number; y: number }[] = [];
         let prevCoord = null;
