@@ -801,6 +801,29 @@ export class SettingsTab extends PluginSettingTab {
                     });
             });
 
+        const boundaryLayersHeading = new Setting(containerEl)
+            .setHeading()
+            .setName('Boundary Layers');
+        boundaryLayersHeading.descEl.innerHTML = `Toggleable overlays of note-sourced regions (e.g. countries, states, counties). Each layer selects its regions with a query (e.g. <code>tag:#boundary/state</code>) and draws them with a fine border. Lower levels stack under higher ones. The <code>id</code> is a stable key and cannot be edited.`;
+
+        let boundaryLayersDiv: HTMLDivElement = null;
+        new Setting(containerEl).addButton((component) =>
+            component.setButtonText('Add boundary layer').onClick(async () => {
+                this.plugin.settings.boundaryLayers.push({
+                    id: this.generateUniqueBoundaryLayerId(),
+                    name: '',
+                    query: '',
+                    level: 0,
+                    enabledByDefault: true,
+                    style: { color: '#888888', weight: 1, fillOpacity: 0 },
+                });
+                await this.plugin.saveSettings();
+                this.refreshBoundaryLayers(boundaryLayersDiv);
+            }),
+        );
+        boundaryLayersDiv = containerEl.createDiv();
+        this.refreshBoundaryLayers(boundaryLayersDiv);
+
         new Setting(containerEl).setHeading().setName('Routing');
         new Setting(containerEl)
             .setName('External routing service URL')
@@ -1094,6 +1117,104 @@ export class SettingsTab extends PluginSettingTab {
                         this.refreshPluginOnHide = true;
                         await this.plugin.saveSettings();
                         this.refreshMapSourceSettings(containerEl);
+                    }),
+                );
+            controls.settingEl.style.padding = '5px';
+            controls.settingEl.style.borderTop = 'none';
+        }
+    }
+
+    generateUniqueBoundaryLayerId(): string {
+        const existingIds = new Set(
+            this.plugin.settings.boundaryLayers.map((layer) => layer.id),
+        );
+        let index = this.plugin.settings.boundaryLayers.length + 1;
+        let id = `boundary-${index}`;
+        while (existingIds.has(id)) {
+            index++;
+            id = `boundary-${index}`;
+        }
+        return id;
+    }
+
+    refreshBoundaryLayers(containerEl: HTMLElement) {
+        containerEl.innerHTML = '';
+        for (const boundaryLayer of this.plugin.settings.boundaryLayers) {
+            const controls = new Setting(containerEl)
+                // The id is a stable key (used by view state) and is shown but
+                // intentionally not editable.
+                .setName(boundaryLayer.id)
+                .addText((component) => {
+                    component
+                        .setPlaceholder('Name')
+                        .setValue(boundaryLayer.name)
+                        .onChange(async (value: string) => {
+                            boundaryLayer.name = value;
+                            await this.plugin.saveSettings();
+                        }).inputEl.style.width = '8em';
+                })
+                .addText((component) => {
+                    component
+                        .setPlaceholder('Query (e.g. tag:#boundary/state)')
+                        .setValue(boundaryLayer.query)
+                        .onChange(async (value: string) => {
+                            boundaryLayer.query = value;
+                            await this.plugin.saveSettings();
+                        });
+                })
+                .addText((component) => {
+                    component
+                        .setPlaceholder('Level')
+                        .setValue((boundaryLayer.level ?? 0).toString())
+                        .onChange(async (value: string) => {
+                            const level = parseInt(value);
+                            if (!isNaN(level)) {
+                                boundaryLayer.level = level;
+                                await this.plugin.saveSettings();
+                            }
+                        }).inputEl.style.width = '3em';
+                })
+                .addText((component) => {
+                    component
+                        .setPlaceholder('Color')
+                        .setValue(boundaryLayer.style?.color ?? '')
+                        .onChange(async (value: string) => {
+                            if (!boundaryLayer.style)
+                                boundaryLayer.style = { fillOpacity: 0 };
+                            boundaryLayer.style.color = value;
+                            await this.plugin.saveSettings();
+                        }).inputEl.style.width = '6em';
+                })
+                .addText((component) => {
+                    component
+                        .setPlaceholder('Weight')
+                        .setValue((boundaryLayer.style?.weight ?? 1).toString())
+                        .onChange(async (value: string) => {
+                            const weight = parseFloat(value);
+                            if (!isNaN(weight)) {
+                                if (!boundaryLayer.style)
+                                    boundaryLayer.style = { fillOpacity: 0 };
+                                boundaryLayer.style.weight = weight;
+                                await this.plugin.saveSettings();
+                            }
+                        }).inputEl.style.width = '3em';
+                })
+                .addToggle((component) => {
+                    component
+                        .setTooltip('Enabled by default')
+                        .setValue(boundaryLayer.enabledByDefault)
+                        .onChange(async (value: boolean) => {
+                            boundaryLayer.enabledByDefault = value;
+                            await this.plugin.saveSettings();
+                        });
+                })
+                .addButton((component) =>
+                    component.setButtonText('Remove').onClick(async () => {
+                        this.plugin.settings.boundaryLayers.remove(
+                            boundaryLayer,
+                        );
+                        await this.plugin.saveSettings();
+                        this.refreshBoundaryLayers(containerEl);
                     }),
                 );
             controls.settingEl.style.padding = '5px';
