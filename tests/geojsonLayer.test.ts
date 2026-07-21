@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { getAllTags } from 'obsidian';
 import type { GeoJSON } from 'geojson';
 
 import {
@@ -542,6 +543,89 @@ describe('buildGeoJsonLayers — inline GeoJSON in .md files', () => {
         expect((plugin.displayRulesCache as any).runOn).toHaveBeenCalledTimes(
             2,
         );
+    });
+});
+
+// ─── buildGeoJsonLayers — note-tag inheritance ───────────────────────────────
+
+describe('buildGeoJsonLayers — inline GeoJSON inherits note tags', () => {
+    let plugin: MapViewPlugin;
+
+    beforeEach(() => {
+        plugin = makeMockPlugin();
+    });
+
+    // getAllTags is mocked globally to return []; each test sets its own value.
+    // Restore the default afterwards so unrelated suites keep seeing no note tags.
+    afterEach(() => {
+        vi.mocked(getAllTags).mockReturnValue([]);
+    });
+
+    it("should include the note's own tags in layer.tags when the inline geojson block has no inline tags", async () => {
+        vi.mocked(getAllTags).mockReturnValue(['#boundary/state']);
+        const { app } = makeApp({
+            fileContent: inlineGeoJsonBlock(JSON.stringify(POINT_GEOJSON)),
+        });
+        const layers = await buildGeoJsonLayers(
+            [makeFile()],
+            defaultSettings,
+            app,
+            plugin,
+        );
+        expect(layers).toHaveLength(1);
+        expect(layers[0].tags).toContain('#boundary/state');
+    });
+
+    it("should merge inline-block tags with the note's own tags when both are present", async () => {
+        vi.mocked(getAllTags).mockReturnValue(['#boundary/state']);
+        const { app } = makeApp({
+            fileContent: inlineGeoJsonBlock(
+                JSON.stringify(POINT_GEOJSON),
+                'tag:trip',
+            ),
+        });
+        const layers = await buildGeoJsonLayers(
+            [makeFile()],
+            defaultSettings,
+            app,
+            plugin,
+        );
+        expect(layers[0].tags).toContain('#trip');
+        expect(layers[0].tags).toContain('#boundary/state');
+    });
+
+    it('should preserve inline-tag-only behavior when the note has no own tags', async () => {
+        vi.mocked(getAllTags).mockReturnValue([]);
+        const { app } = makeApp({
+            fileContent: inlineGeoJsonBlock(
+                JSON.stringify(POINT_GEOJSON),
+                'tag:foo',
+            ),
+        });
+        const layers = await buildGeoJsonLayers(
+            [makeFile()],
+            defaultSettings,
+            app,
+            plugin,
+        );
+        expect(layers[0].tags).toContain('#foo');
+    });
+
+    it('should not duplicate a tag present both inline and as a note tag', async () => {
+        vi.mocked(getAllTags).mockReturnValue(['#foo']);
+        const { app } = makeApp({
+            fileContent: inlineGeoJsonBlock(
+                JSON.stringify(POINT_GEOJSON),
+                'tag:foo',
+            ),
+        });
+        const layers = await buildGeoJsonLayers(
+            [makeFile()],
+            defaultSettings,
+            app,
+            plugin,
+        );
+        expect(layers[0].tags.filter((t) => t === '#foo')).toHaveLength(1);
     });
 });
 

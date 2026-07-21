@@ -2,7 +2,7 @@ import * as leaflet from 'leaflet';
 import { type PathOptions } from 'leaflet';
 import 'leaflet-extra-markers';
 import 'leaflet-extra-markers/dist/css/leaflet.extra-markers.min.css';
-import { App, TFile, Notice } from 'obsidian';
+import { App, TFile, Notice, getAllTags } from 'obsidian';
 import { type GeoJSON } from 'geojson';
 import * as toGeoJson from '@tmcw/togeojson';
 import { DOMParser } from '@xmldom/xmldom';
@@ -185,6 +185,15 @@ export async function buildGeoJsonLayers(
                                 layer.generateId();
                                 if (match.groups.tags)
                                     addTagsToLayer(layer, match.groups.tags);
+                                // Inherit the note's own tags (frontmatter + body),
+                                // de-duplicated alongside any inline geojson-block tags.
+                                // Both sources use the `#tag` form.
+                                layer.tags = Array.from(
+                                    new Set([
+                                        ...layer.tags,
+                                        ...(getAllTags(metadata) ?? []),
+                                    ]),
+                                );
                                 layer.sourceType = 'geojson';
                                 layers.push(layer);
                             }
