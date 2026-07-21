@@ -52,6 +52,7 @@ import {
     editGeoJson,
 } from 'src/geojsonLayer';
 import { BaseGeoLayer } from 'src/baseGeoLayer';
+import { filterOutDisabledBoundaryLayers } from 'src/boundaryLayers';
 import { LayerCache } from 'src/layerCache';
 import { getIconFromOptions, type IconOptions } from 'src/markerIcons';
 import MapViewPlugin from 'src/main';
@@ -914,6 +915,14 @@ export class MapContainer {
             filteredLayers = [];
             state.queryError = true;
         }
+        // Hide regions whose boundary layer is toggled off. Layers matching no
+        // boundary layer are unaffected.
+        filteredLayers = filterOutDisabledBoundaryLayers(
+            filteredLayers,
+            this.settings.boundaryLayers,
+            state.enabledBoundaryLayerIds,
+            this.app,
+        );
         addEdgesToMarkers(
             filteredLayers,
             this.app,
