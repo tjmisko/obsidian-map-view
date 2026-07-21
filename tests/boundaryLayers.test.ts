@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { filterOutDisabledBoundaryLayers } from 'src/boundaryLayers';
+import {
+    filterOutDisabledBoundaryLayers,
+    getBoundaryLayerForLayer,
+    boundaryPaneName,
+} from 'src/boundaryLayers';
 import { type BoundaryLayer } from 'src/settings';
 
 // Minimal mock layer, mirroring tests/query.test.ts.
@@ -106,5 +110,67 @@ describe('filterOutDisabledBoundaryLayers', () => {
         expect(filterOutDisabledBoundaryLayers([layer], [], [], app)).toEqual([
             layer,
         ]);
+    });
+});
+
+describe('getBoundaryLayerForLayer', () => {
+    const country = boundary({
+        id: 'boundary-country',
+        query: 'tag:#boundary/country',
+        level: 0,
+    });
+    const state = boundary({
+        id: 'boundary-state',
+        query: 'tag:#boundary/state',
+        level: 1,
+    });
+    const county = boundary({
+        id: 'boundary-county',
+        query: 'tag:#boundary/county',
+        level: 2,
+    });
+
+    it('returns the matching boundary layer', () => {
+        const layer = mockLayer({ tags: ['#boundary/state'] });
+        expect(
+            getBoundaryLayerForLayer(layer, [country, state, county], app),
+        ).toBe(state);
+    });
+
+    it('returns the most-nested (highest level) match when several match', () => {
+        const layer = mockLayer({
+            tags: ['#boundary/state', '#boundary/county'],
+        });
+        expect(
+            getBoundaryLayerForLayer(layer, [country, state, county], app),
+        ).toBe(county);
+    });
+
+    it('returns null when the layer matches no boundary layer', () => {
+        const layer = mockLayer({ tags: ['#restaurant'] });
+        expect(
+            getBoundaryLayerForLayer(layer, [country, state, county], app),
+        ).toBeNull();
+    });
+
+    it('skips boundary layers with an empty/whitespace query', () => {
+        const empty = boundary({ id: 'empty', query: '  ', level: 5 });
+        const layer = mockLayer({ tags: ['#boundary/state'] });
+        expect(getBoundaryLayerForLayer(layer, [empty, state], app)).toBe(
+            state,
+        );
+    });
+
+    it('returns null when there are no boundary layers', () => {
+        const layer = mockLayer({ tags: ['#boundary/state'] });
+        expect(getBoundaryLayerForLayer(layer, [], app)).toBeNull();
+    });
+});
+
+describe('boundaryPaneName', () => {
+    it('derives a distinct, stable pane name per level', () => {
+        expect(boundaryPaneName(0)).toBe('mv-boundary-pane-0');
+        expect(boundaryPaneName(2)).toBe('mv-boundary-pane-2');
+        expect(boundaryPaneName(0)).not.toBe(boundaryPaneName(1));
     });
 });

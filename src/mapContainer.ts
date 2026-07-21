@@ -52,7 +52,11 @@ import {
     editGeoJson,
 } from 'src/geojsonLayer';
 import { BaseGeoLayer } from 'src/baseGeoLayer';
-import { filterOutDisabledBoundaryLayers } from 'src/boundaryLayers';
+import {
+    filterOutDisabledBoundaryLayers,
+    getBoundaryLayerForLayer,
+    boundaryPaneName,
+} from 'src/boundaryLayers';
 import { LayerCache } from 'src/layerCache';
 import { getIconFromOptions, type IconOptions } from 'src/markerIcons';
 import MapViewPlugin from 'src/main';
@@ -161,6 +165,10 @@ export class MapContainer {
         highlight: leaflet.Layer = null;
         /** The actual entity that is highlighted, which is either equal to the above, or the cluster group that it belongs to */
         actualHighlight: leaflet.Marker = null;
+        /** Pending hover-intent timer for a boundary region's (debounced) note popup */
+        boundaryPopupTimer: number | null = null;
+        /** The SVG path element of the currently hover-highlighted boundary region */
+        hoveredBoundaryElement: Element | null = null;
         /** The marker used to denote a routing source if any */
         routingSource: leaflet.Marker = null;
         /** The routes added to the map */
@@ -1336,6 +1344,11 @@ export class MapContainer {
      */
     private closeMarkerPopup(hardClose: boolean) {
         this.endHoverHighlight();
+        // Cancel a pending hover-intent popup so it can't open after the close.
+        if (this.display.boundaryPopupTimer !== null) {
+            window.clearTimeout(this.display.boundaryPopupTimer);
+            this.display.boundaryPopupTimer = null;
+        }
         this.display.popupDiv.removeClass('visible');
         if (hardClose) {
             this.display.popupElement = null;
@@ -2007,15 +2020,26 @@ export class MapContainer {
     }
 
     private newLeafletGeoJson(marker: GeoJsonLayer): leaflet.GeoJSON {
-        const geoJsonLayer = leaflet.geoJSON(marker.geojson, {
+        // If this region belongs to a boundary layer, it gets that layer's style,
+        // a per-level pane (for nested z-order), a CSS class for hover highlight,
+        // and debounced hover handling instead of the standard popup-on-hover.
+        const boundary = getBoundaryLayerForLayer(
+            marker,
+            this.settings.boundaryLayers,
+            this.app,
+        );
+        if (boundary) this.ensureBoundaryPane(boundary.level ?? 0);
+        const geoJsonOptions: leaflet.GeoJSONOptions = {
             style: {
                 ...marker.pathOptions,
+                ...(boundary ? boundary.style : {}),
                 bubblingMouseEvents: false, // This lets stuff like the 'contextmenu' event work
             },
             onEachFeature: (feature: any, layer: leaflet.Layer) => {
                 // Features of type 'Point' are handled below
                 if (feature?.geometry?.type !== 'Point') {
-                    this.addPopupHandlingEvents(layer, marker, 'mouse');
+                    if (boundary) this.addBoundaryHoverEvents(layer, marker);
+                    else this.addPopupHandlingEvents(layer, marker, 'mouse');
                     layer.on(
                         'contextmenu',
                         (event: leaflet.LeafletMouseEvent) => {
@@ -2075,7 +2099,16 @@ export class MapContainer {
                 );
                 return leafletMarker;
             },
-        });
+        };
+        if (boundary) {
+            // The pane and class must be constructor options so they reach each
+            // feature's SVG path; the CSS in styles.css owns the hover transition.
+            (geoJsonOptions as any).pane = boundaryPaneName(
+                boundary.level ?? 0,
+            );
+            (geoJsonOptions as any).className = consts.BOUNDARY_CLASS_NAME;
+        }
+        const geoJsonLayer = leaflet.geoJSON(marker.geojson, geoJsonOptions);
 
         geoJsonLayer.on(
             'pm:edit',
@@ -2098,6 +2131,75 @@ export class MapContainer {
         );
 
         return geoJsonLayer;
+    }
+
+    /**
+     * Lazily create the Leaflet pane for a boundary nesting level. Panes are
+     * stacked by level (higher level = higher z-index) so more-nested regions
+     * (e.g. counties) draw on top of and win native hover hit-testing over their
+     * containers (e.g. states), while all staying below the marker pane (600).
+     */
+    private ensureBoundaryPane(level: number) {
+        const paneName = boundaryPaneName(level);
+        if (!this.display.map.getPane(paneName)) {
+            const pane = this.display.map.createPane(paneName);
+            pane.style.zIndex = String(410 + (level ?? 0));
+        }
+    }
+
+    /**
+     * Hover behavior for a boundary region: toggle a CSS class for the subtle
+     * fill/border animation (the browser tweens it — no per-frame JS), and open
+     * the note popup only after a short hover-intent delay so sweeping across
+     * many regions doesn't spam the (heavier) markdown render.
+     */
+    private addBoundaryHoverEvents(
+        leafletLayer: leaflet.Layer,
+        layer: GeoJsonLayer,
+    ) {
+        if (utils.isMobile(this.app)) {
+            // No hover on mobile — keep the standard tap-to-popup behavior.
+            this.addPopupHandlingEvents(leafletLayer, layer, 'mouse');
+            return;
+        }
+        leafletLayer.on('mouseover', (event: leaflet.LeafletMouseEvent) => {
+            this.setBoundaryHover(leafletLayer);
+            if (this.display.boundaryPopupTimer !== null)
+                window.clearTimeout(this.display.boundaryPopupTimer);
+            this.display.boundaryPopupTimer = window.setTimeout(() => {
+                this.display.boundaryPopupTimer = null;
+                this.showMarkerPopups(layer, leafletLayer, event, 'mouse');
+            }, consts.BOUNDARY_HOVER_POPUP_DELAY_MS);
+        });
+        leafletLayer.on('mouseout', (_event: leaflet.LeafletMouseEvent) => {
+            this.clearBoundaryHover(leafletLayer);
+            this.closeMarkerPopup(false);
+        });
+    }
+
+    private setBoundaryHover(leafletLayer: leaflet.Layer) {
+        // Self-heal against a missed mouseout: clear the previously hovered
+        // region before highlighting the new one.
+        if (this.display.hoveredBoundaryElement)
+            this.display.hoveredBoundaryElement.classList.remove(
+                consts.BOUNDARY_HOVER_CLASS_NAME,
+            );
+        const element: Element | undefined = (
+            leafletLayer as any
+        ).getElement?.();
+        if (element) {
+            element.classList.add(consts.BOUNDARY_HOVER_CLASS_NAME);
+            this.display.hoveredBoundaryElement = element;
+        }
+    }
+
+    private clearBoundaryHover(leafletLayer: leaflet.Layer) {
+        const element: Element | undefined = (
+            leafletLayer as any
+        ).getElement?.();
+        if (element) element.classList.remove(consts.BOUNDARY_HOVER_CLASS_NAME);
+        if (this.display.hoveredBoundaryElement === element)
+            this.display.hoveredBoundaryElement = null;
     }
 
     private getGeoLayer<T extends BaseGeoLayer>(

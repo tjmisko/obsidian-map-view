@@ -44,6 +44,12 @@ export const MIN_REAL_TIME_LOCATION_ZOOM = 13;
 
 export const HIGHLIGHT_CLASS_NAME = 'map-view-highlight';
 
+// CSS classes for boundary-region hover highlighting (see styles.css)
+export const BOUNDARY_CLASS_NAME = 'mv-boundary';
+export const BOUNDARY_HOVER_CLASS_NAME = 'mv-boundary-hover';
+// Hover-intent delay before opening a boundary region's (heavier) note popup
+export const BOUNDARY_HOVER_POPUP_DELAY_MS = 100;
+
 export const DEFAULT_EMBEDDED_HEIGHT = 300;
 export const MIN_QUICK_EMBED_ZOOM = 8;
 

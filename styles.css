@@ -9,6 +9,24 @@
     text-decoration: underline;
 }
 
+/*
+ * Boundary regions (political layers): a fine border whose fill fades in and
+ * border thickens slightly on hover. The base border color/weight/fill-opacity
+ * come from each boundary layer's style (as SVG attributes); we only declare the
+ * transition and the hover overrides here, so the browser tweens them with no
+ * per-frame JS. CSS rules win over Leaflet's presentation attributes, so the
+ * hovered values take effect and animate back out on mouseout.
+ */
+.leaflet-interactive.mv-boundary {
+    transition:
+        fill-opacity 0.15s ease,
+        stroke-width 0.15s ease;
+}
+.leaflet-interactive.mv-boundary.mv-boundary-hover {
+    fill-opacity: 0.12;
+    stroke-width: 2;
+}
+
 .map-view-graph-controls {
     left: 8px;
     top: 8px;

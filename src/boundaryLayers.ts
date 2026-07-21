@@ -60,3 +60,38 @@ export function filterOutDisabledBoundaryLayers(
         return !belongsToAnyBoundary;
     });
 }
+
+/**
+ * Returns the boundary layer a given layer belongs to, used to pick its style
+ * and rendering pane. When a layer matches several boundary layers (e.g. tagged
+ * both `#boundary/state` and `#boundary/county`), the most-nested one — the
+ * highest `level` — wins, so it draws and hovers on top.
+ *
+ * Returns null when the layer belongs to no boundary layer.
+ */
+export function getBoundaryLayerForLayer(
+    layer: BaseGeoLayer,
+    boundaryLayers: BoundaryLayer[],
+    app: App,
+): BoundaryLayer | null {
+    if (!boundaryLayers || boundaryLayers.length === 0) return null;
+    let best: BoundaryLayer | null = null;
+    for (const boundary of boundaryLayers) {
+        if (!boundary.query || boundary.query.trim().length === 0) continue;
+        const query = new Query(app, boundary.query);
+        if (query.testLayer(layer)) {
+            if (best === null || (boundary.level ?? 0) > (best.level ?? 0))
+                best = boundary;
+        }
+    }
+    return best;
+}
+
+/**
+ * The name of the Leaflet map pane that holds boundary regions of a given
+ * nesting level. Higher levels get a higher z-index (see MapContainer), so
+ * more-nested regions sit on top and win native hover hit-testing.
+ */
+export function boundaryPaneName(level: number): string {
+    return `mv-boundary-pane-${level ?? 0}`;
+}
