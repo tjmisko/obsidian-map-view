@@ -24,6 +24,10 @@
             suggestor.open();
         }
     }
+
+    export function focus() {
+        queryInputElement?.focus();
+    }
 </script>
 
 <!-- The classes here utilize Obsidian styling -->

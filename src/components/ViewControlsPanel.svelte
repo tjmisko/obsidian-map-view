@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { untrack, onMount } from 'svelte';
+    import { untrack, onMount, tick } from 'svelte';
     import { Notice, App, getIcon, TFile, type HeadingCache } from 'obsidian';
     import { type PluginSettings } from '../settings';
     import { type ViewSettings, MapContainer } from '../mapContainer';
@@ -60,6 +60,7 @@
     let allNoteHeadings: string[] = $state([]);
     let allTags: string[] = $state(getAllTagNames(app, plugin));
     let addTagInputElement: HTMLInputElement = $state();
+    let queryField: any = $state();
 
     $effect(() => {
         const considerAutoFit = statesDifferOnlyInQuery(
@@ -106,6 +107,17 @@
             noteToEdit = file;
             editModeTools.noteToEdit = noteToEdit;
         }
+    }
+
+    // Un-minimize the panel, expand the Filters section, and focus the query input. Async because the query field
+    // is not mounted while the panel is minimized (and is `hidden` while Filters is collapsed), so we wait a tick
+    // for the DOM to reflect those changes before focusing.
+    export async function focusQueryBox() {
+        settings.mapControlsMinimized = false;
+        minimized = false;
+        setMapControl('filtersDisplayed', true);
+        await tick();
+        queryField?.focus();
     }
 
     export function openChooseNote() {
@@ -327,6 +339,7 @@
                         setMapControl('filtersDisplayed', expanded)}
                 >
                     <QueryTextField
+                        bind:this={queryField}
                         {plugin}
                         {app}
                         bind:query={mapState.query}

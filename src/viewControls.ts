@@ -99,6 +99,10 @@ export class ViewControls {
     public openEditSection(file?: TFile) {
         if (this.controlPanel) this.controlPanel.openEditSection(file);
     }
+
+    public focusQueryBox() {
+        if (this.controlPanel) this.controlPanel.focusQueryBox();
+    }
 }
 
 export class SearchControl extends leaflet.Control {
