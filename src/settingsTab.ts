@@ -312,6 +312,40 @@ export class SettingsTab extends PluginSettingTab {
                     });
             });
         new Setting(containerEl)
+            .setName('Modal map interaction (vim-like)')
+            .setDesc(
+                'Make the Main Map View modal: the wheel pans, +/- and the zoom buttons zoom, and Escape returns to Normal mode. (Restart Map View for this to take effect.)',
+            )
+            .addToggle((component) => {
+                component
+                    .setValue(
+                        this.plugin.settings.modalMapInteraction ??
+                            DEFAULT_SETTINGS.modalMapInteraction,
+                    )
+                    .onChange(async (value) => {
+                        this.plugin.settings.modalMapInteraction = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Zoom step')
+            .setDesc(
+                'How much +/- and the zoom buttons change the map zoom. (Restart Map View for this to take effect.)',
+            )
+            .addSlider((slider) => {
+                slider
+                    .setLimits(0.25, 1.0, 0.25)
+                    .setDynamicTooltip()
+                    .setValue(
+                        this.plugin.settings.zoomStep ??
+                            DEFAULT_SETTINGS.zoomStep,
+                    )
+                    .onChange(async (value: number) => {
+                        this.plugin.settings.zoomStep = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
             .setName('Save back/forward history')
             .setDesc(
                 'While making changes to the map, save the history to be browsable through Obsidian back/forward buttons.',

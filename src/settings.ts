@@ -84,6 +84,11 @@ export type PluginSettings = {
     offlineMaxStorageGb: number;
     loadLayersAhead: boolean;
     handleGeoJsonCodeBlocks: boolean;
+    // When on, the Main Map View uses a modal, vim-like interaction model
+    // (wheel pans, +/- zoom, Escape returns to Normal mode).
+    modalMapInteraction: boolean;
+    // How much +/- and the zoom buttons change the map zoom.
+    zoomStep: number;
 };
 
 export type DepracatedFields = {
@@ -411,6 +416,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     offlineMaxStorageGb: 2,
     loadLayersAhead: true,
     handleGeoJsonCodeBlocks: true,
+    modalMapInteraction: true,
+    zoomStep: 0.5,
 };
 
 export function convertLegacyMarkerIcons(
