@@ -171,6 +171,8 @@ export class MapContainer {
         selectedBoundaryLayer: leaflet.Layer | null = null;
         /** The SVG path element of the selected boundary region (holds the persistent highlight class) */
         selectedBoundaryElement: Element | null = null;
+        /** Document keydown handler (Escape) active only while a region is pinned */
+        boundaryEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
         /** The marker used to denote a routing source if any */
         routingSource: leaflet.Marker = null;
         /** The routes added to the map */
@@ -368,6 +370,8 @@ export class MapContainer {
 
     onClose() {
         this.isOpen = false;
+        // Drop the Escape listener if the view is closed while a region is pinned.
+        this.unregisterBoundaryEscapeHandler();
         unregisterLocationUpdates(this);
     }
 
@@ -2293,6 +2297,8 @@ export class MapContainer {
             this.display.selectedBoundaryElement = element;
         }
         this.display.selectedBoundaryLayer = leafletLayer;
+        // While a region is pinned, Escape closes it like clicking off the map.
+        this.registerBoundaryEscapeHandler();
     }
 
     /** Drop the persistent highlight of the currently selected boundary region, if any. */
@@ -2303,6 +2309,40 @@ export class MapContainer {
             );
         this.display.selectedBoundaryElement = null;
         this.display.selectedBoundaryLayer = null;
+        this.unregisterBoundaryEscapeHandler();
+    }
+
+    /**
+     * While a boundary region is pinned, listen for Escape at the document
+     * capture phase so it closes the pinned popup (as if the user clicked off
+     * the map) before Obsidian can act on the key. The listener lives only as
+     * long as the pin, and self-removes on any close via clearBoundarySelection.
+     */
+    private registerBoundaryEscapeHandler() {
+        this.unregisterBoundaryEscapeHandler();
+        this.display.boundaryEscapeHandler = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.setHighlight(null);
+            this.closeMarkerPopup(false);
+        };
+        document.addEventListener(
+            'keydown',
+            this.display.boundaryEscapeHandler,
+            true,
+        );
+    }
+
+    private unregisterBoundaryEscapeHandler() {
+        if (this.display.boundaryEscapeHandler) {
+            document.removeEventListener(
+                'keydown',
+                this.display.boundaryEscapeHandler,
+                true,
+            );
+            this.display.boundaryEscapeHandler = null;
+        }
     }
 
     /**
