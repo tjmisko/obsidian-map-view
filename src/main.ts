@@ -424,6 +424,26 @@ export default class MapViewPlugin extends Plugin {
         });
 
         this.addCommand({
+            id: 'focus-map-normal-mode',
+            name: 'Focus map (Normal mode)',
+            icon: 'crosshair',
+            callback: async () => {
+                let view = findOpenMapView(this.app);
+                if (!view)
+                    view = await this.openMap(this.settings.openMapBehavior);
+                if (view) {
+                    const mapView = view as MainMapView;
+                    this.app.workspace.setActiveLeaf(mapView.leaf, {
+                        focus: true,
+                    });
+                    // No-op when the modal feature is off; the setActiveLeaf
+                    // above still focuses the map either way.
+                    mapView.mapContainer.focusForModal();
+                }
+            },
+        });
+
+        this.addCommand({
             id: 'quick-map-embed',
             name: 'Add an embedded map',
             icon: 'log-in',
