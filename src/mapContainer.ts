@@ -82,6 +82,7 @@ import * as menus from 'src/menus';
 import { createPopper, type Instance as PopperInstance } from '@popperjs/core';
 import * as offlineTiles from 'src/offlineTiles.svelte';
 import MarkerPopup from './components/MarkerPopup.svelte';
+import { ModalController } from './modalController';
 import { type RoutingResult } from 'src/routing';
 import { getMarkerFromUser } from 'src/markerSelectDialog';
 
@@ -101,6 +102,10 @@ export type ViewSettings = {
     showOpenButton: boolean;
     showRealTimeButton: boolean;
     showLockButton: boolean;
+
+    // Enable the modal (vim-like) interaction model. Only the Main Map View
+    // opts in; embedded/Bases/mini views leave this undefined (= off).
+    enableModalInteraction?: boolean;
 
     // Override the global settings auto zoom.
     // Unlike the global auto zoom, the view auto zoom also happens on every setState, so when a new view opens,
@@ -189,6 +194,8 @@ export class MapContainer {
     public postUpdateActions: (() => void)[] = [];
     public ongoingChanges = 0;
     public freezeMap: boolean = false;
+    /** The modal (vim-like) interaction controller, when the feature is on. */
+    public modalController: ModalController | null = null;
     private plugin: MapViewPlugin;
     /** The default state as saved in the plugin settings, or something else that the view sets */
     public defaultState: MapState;
@@ -366,12 +373,24 @@ export class MapContainer {
                 },
             );
         }
+
+        // Wire up modal (vim-like) interaction. Gated on both the per-view
+        // opt-in and the global setting; constructed after createMap() (so the
+        // Leaflet map + its container exist) and after display.controls.
+        if (
+            this.viewSettings.enableModalInteraction &&
+            this.settings.modalMapInteraction
+        ) {
+            this.modalController = new ModalController(this);
+        }
     }
 
     onClose() {
         this.isOpen = false;
         // Drop the Escape listener if the view is closed while a region is pinned.
         this.unregisterBoundaryEscapeHandler();
+        this.modalController?.destroy();
+        this.modalController = null;
         unregisterLocationUpdates(this);
     }
 
@@ -592,6 +611,13 @@ export class MapContainer {
     }
 
     async createMap() {
+        const modalFeatureOn =
+            this.viewSettings.enableModalInteraction &&
+            this.settings.modalMapInteraction;
+        // Smaller, smoother zoom steps for the +/- keys and zoom buttons.
+        // zoomSnap must be <= zoomDelta or the map snaps the fractional step
+        // back to a whole level, making the delta a no-op.
+        const zoomStep = this.settings.zoomStep ?? DEFAULT_SETTINGS.zoomStep;
         // Obsidian Leaflet compatability: disable tree-shaking for the full-screen module
         this.display.map = new leaflet.Map(this.display.mapDiv, {
             center: this.defaultState.mapCenter,
@@ -599,7 +625,18 @@ export class MapContainer {
             zoomControl: false,
             worldCopyJump: true,
             maxBoundsViscosity: 1.0,
+            zoomDelta: zoomStep,
+            zoomSnap: Math.min(zoomStep, 1),
         });
+        if (modalFeatureOn) {
+            // The ModalController owns all keyboard/wheel handling, so Leaflet's
+            // own handlers must stay off (they'd double-handle). Disabling the
+            // keyboard handler drops the container's tabindex, so restore it or
+            // focus()/keydown silently fails.
+            this.display.map.keyboard.disable();
+            this.display.map.scrollWheelZoom.disable();
+            this.display.map.getContainer().tabIndex = 0;
+        }
         this.createLoadAnimationDiv();
 
         if (this.viewSettings.showLockButton) {
@@ -812,20 +849,28 @@ export class MapContainer {
         // horizontal component dominates, pan by it and preventDefault so the
         // browser doesn't do horizontal page-scroll / back-forward navigation.
         // Gated on dragging being enabled so a locked map ignores it too.
-        this.display.map.getContainer().addEventListener(
-            'wheel',
-            (event: WheelEvent) => {
-                if (!this.display.map.dragging.enabled()) return;
-                if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
-                if (event.deltaX === 0) return;
-                event.preventDefault();
-                // deltaMode 1 = lines (tilt wheels); scale to a sensible pixel step.
-                const pixels =
-                    event.deltaMode === 1 ? event.deltaX * 16 : event.deltaX;
-                this.display.map.panBy([pixels, 0], { animate: false });
-            },
-            { passive: false },
-        );
+        // When the modal feature is on, the ModalController owns all wheel
+        // handling (including horizontal panning), so skip this to avoid
+        // double-panning.
+        if (!modalFeatureOn) {
+            this.display.map.getContainer().addEventListener(
+                'wheel',
+                (event: WheelEvent) => {
+                    if (!this.display.map.dragging.enabled()) return;
+                    if (Math.abs(event.deltaX) <= Math.abs(event.deltaY))
+                        return;
+                    if (event.deltaX === 0) return;
+                    event.preventDefault();
+                    // deltaMode 1 = lines (tilt wheels); scale to a sensible pixel step.
+                    const pixels =
+                        event.deltaMode === 1
+                            ? event.deltaX * 16
+                            : event.deltaX;
+                    this.display.map.panBy([pixels, 0], { animate: false });
+                },
+                { passive: false },
+            );
+        }
 
         // Build the map right-click context menu
         this.display.map.on(
@@ -1914,6 +1959,14 @@ export class MapContainer {
     }
 
     applyLock() {
+        // When the modal feature is on, Leaflet's keyboard + scrollWheelZoom
+        // stay permanently disabled (the ModalController owns them). We must NOT
+        // re-enable them on unlock, or wheel/keys would be double-handled;
+        // instead we drive the controller via setEnabled(). Every other lock
+        // toggle is unchanged, and the whole feature-off path is stock behavior.
+        const modalFeatureOn =
+            this.viewSettings.enableModalInteraction &&
+            this.settings.modalMapInteraction;
         // If the view does not support locking, refuse to lock.
         // This is important if the MapState is taken from another view, e.g. Open is clicked in a locked embedded map
         // to open it in a full Map View, which cannot be locked.
@@ -1925,9 +1978,10 @@ export class MapContainer {
             this.display.map.dragging.disable();
             this.display.map.touchZoom.disable();
             this.display.map.doubleClickZoom.disable();
-            this.display.map.scrollWheelZoom.disable();
+            if (!modalFeatureOn) this.display.map.scrollWheelZoom.disable();
             this.display.map.boxZoom.disable();
-            this.display.map.keyboard.disable();
+            if (!modalFeatureOn) this.display.map.keyboard.disable();
+            this.modalController?.setEnabled(false);
             if (this.display.zoomControls) {
                 this.display.zoomControls.remove();
                 this.display.zoomControls = null;
@@ -1936,11 +1990,21 @@ export class MapContainer {
             this.display.map.dragging.enable();
             this.display.map.touchZoom.enable();
             this.display.map.doubleClickZoom.enable();
-            this.display.map.scrollWheelZoom.enable();
+            if (!modalFeatureOn) this.display.map.scrollWheelZoom.enable();
             this.display.map.boxZoom.enable();
-            this.display.map.keyboard.enable();
+            if (!modalFeatureOn) this.display.map.keyboard.enable();
+            this.modalController?.setEnabled(true);
             if (!this.display.zoomControls) this.addZoomButtons();
         }
+    }
+
+    /**
+     * Focus the map so modal keystrokes land on it (Normal mode). No-op when
+     * the modal feature is off; the controller guards against stealing focus
+     * from an input (Insert mode).
+     */
+    public focusForModal() {
+        this.modalController?.focus();
     }
 
     startHoverHighlight(markerToFocus: BaseGeoLayer) {

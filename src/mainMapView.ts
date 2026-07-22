@@ -28,9 +28,26 @@ export class MainMapView extends BaseMapView {
             showRealTimeButton: true,
             showLockButton: false,
             showOpenButton: false,
+            enableModalInteraction: true,
         };
 
         super(leaf, settings, viewSettings, plugin);
+    }
+
+    async onOpen() {
+        await super.onOpen();
+        // When this pane becomes active, focus the map so modal (vim-like)
+        // keystrokes land on it without requiring a click. focusForModal()
+        // guards against stealing focus from an input. Registered via
+        // registerEvent so it's auto-cleaned when the view closes.
+        this.registerEvent(
+            this.app.workspace.on(
+                'active-leaf-change',
+                (leaf: WorkspaceLeaf | null) => {
+                    if (leaf === this.leaf) this.mapContainer.focusForModal();
+                },
+            ),
+        );
     }
 
     getViewType() {
