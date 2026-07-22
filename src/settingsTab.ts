@@ -346,6 +346,40 @@ export class SettingsTab extends PluginSettingTab {
                     });
             });
         new Setting(containerEl)
+            .setName('Big zoom step (Alt/Option + / -)')
+            .setDesc(
+                'The larger zoom step used by +/- while Alt/Option (or Cmd/Ctrl) is held, for a coarser jump.',
+            )
+            .addSlider((slider) => {
+                slider
+                    .setLimits(1.0, 4.0, 0.5)
+                    .setDynamicTooltip()
+                    .setValue(
+                        this.plugin.settings.zoomStepBig ??
+                            DEFAULT_SETTINGS.zoomStepBig,
+                    )
+                    .onChange(async (value: number) => {
+                        this.plugin.settings.zoomStepBig = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Show zoom buttons')
+            .setDesc(
+                'Show the +/- zoom buttons on the map. Off by default for a cleaner, keyboard-driven map. (Restart Map View for this to take effect.)',
+            )
+            .addToggle((component) => {
+                component
+                    .setValue(
+                        this.plugin.settings.showZoomButtons ??
+                            DEFAULT_SETTINGS.showZoomButtons,
+                    )
+                    .onChange(async (value) => {
+                        this.plugin.settings.showZoomButtons = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
             .setName('Save back/forward history')
             .setDesc(
                 'While making changes to the map, save the history to be browsable through Obsidian back/forward buttons.',

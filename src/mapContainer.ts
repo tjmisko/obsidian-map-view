@@ -42,7 +42,7 @@ import {
     type TileSource,
     DEFAULT_SETTINGS,
 } from 'src/settings';
-import { FileMarker, addEdgesToMarkers, moveFileMarker } from 'src/fileMarker';
+import { FileMarker, moveFileMarker } from 'src/fileMarker';
 import { createMarkerInFile } from 'src/markerActions';
 import { FloatingMarker } from 'src/floatingMarker';
 import { FloatingPath } from 'src/floatingPath';
@@ -83,6 +83,12 @@ import { createPopper, type Instance as PopperInstance } from '@popperjs/core';
 import * as offlineTiles from 'src/offlineTiles.svelte';
 import MarkerPopup from './components/MarkerPopup.svelte';
 import { ModalController } from './modalController';
+import { SvelteModal } from 'src/svelte';
+import FiltersModal from './components/FiltersModal.svelte';
+import ViewModal from './components/ViewModal.svelte';
+import LayersModal from './components/LayersModal.svelte';
+import PresetsModal from './components/PresetsModal.svelte';
+import EditModal from './components/EditModal.svelte';
 import { type RoutingResult } from 'src/routing';
 import { getMarkerFromUser } from 'src/markerSelectDialog';
 
@@ -92,7 +98,6 @@ export type ViewSettings = {
     showMapControls: boolean;
     showFilters: boolean;
     showView: boolean;
-    showLinks: boolean;
     viewTabType: 'regular' | 'mini';
     showEmbeddedControls: boolean;
     showPresets: boolean;
@@ -146,8 +151,6 @@ export class MapContainer {
         clusterGroup: leaflet.MarkerClusterGroup;
         /** The layers currently on the map */
         layers: LayerCache = new LayerCache();
-        /** The polylines currently on the map */
-        polylines: leaflet.Polyline[] = [];
         /** The view controls */
         controls: ViewControls;
         /** The zoom controls */
@@ -628,6 +631,10 @@ export class MapContainer {
             zoomDelta: zoomStep,
             zoomSnap: Math.min(zoomStep, 1),
         });
+        // Drop the "Leaflet" flag from the attribution so the bottom-right
+        // corner is less obtrusive (the CSS also shrinks/dims it). The map
+        // source's own attribution (e.g. OpenStreetMap) is kept.
+        this.display.map.attributionControl?.setPrefix(false);
         if (modalFeatureOn) {
             // The ModalController owns all keyboard/wheel handling, so Leaflet's
             // own handlers must stay off (they'd double-handle). Disabling the
@@ -1003,12 +1010,6 @@ export class MapContainer {
             state.enabledBoundaryLayerIds,
             this.app,
         );
-        addEdgesToMarkers(
-            filteredLayers,
-            this.app,
-            state.showLinks,
-            this.display.polylines,
-        );
         return filteredLayers;
     }
 
@@ -1034,8 +1035,6 @@ export class MapContainer {
     /**
      * Update the actual Leaflet layers of the map according to a new list of logical layers.
      * Unchanged layers are not touched, new layers are created and old layers that are not in the updated list are removed.
-     * Also, all the polylines (edge lines representing links) are cleared and redrawn, which is inefficient and can
-     * be optimized in the future.
      * @param newLayer The new array of layers
      */
     updateMapLayers(newLayers: Iterable<BaseGeoLayer>) {
@@ -1068,9 +1067,6 @@ export class MapContainer {
             if (!layer.touched) {
                 layersToRemove.push(layer);
                 this.display.layers.delete(layer.id);
-                // Remove the edges that connect the layers we are removing, together with their polylines
-                if (layer instanceof FileMarker)
-                    layer.removeEdges(this.display.polylines);
             }
         }
         this.display.clusterGroup.removeLayers(
@@ -1081,7 +1077,6 @@ export class MapContainer {
         this.display.clusterGroup.addLayers(
             layersToAdd.map((layer) => this.getGeoLayer(layer)),
         );
-        this.buildPolylines();
         // Just a cheap sanity check
         if (totalLayers != this.display.layers.size)
             console.error(
@@ -1090,36 +1085,6 @@ export class MapContainer {
                 'items instead of',
                 totalLayers,
             );
-    }
-
-    /**
-     * Builds all the non-existing polylines according to the edges stored in the layers, and adds them to the map.
-     */
-    private buildPolylines() {
-        if (this.state.showLinks) {
-            for (const layer of this.display.layers.layers) {
-                if (layer instanceof FileMarker) {
-                    // Draw edges between layers
-                    for (const edge of layer.edges) {
-                        // Since an edge is linked from both of its sides, we want to make sure we create
-                        // the polyline just once
-                        if (edge.polyline) {
-                            continue;
-                        }
-                        let polyline = leaflet.polyline(
-                            [edge.marker1.location, edge.marker2.location],
-                            {
-                                color: this.state.linkColor,
-                                weight: 1,
-                            },
-                        );
-                        edge.polyline = polyline;
-                        polyline.addTo(this.display.map);
-                        this.display.polylines.push(polyline);
-                    }
-                }
-            }
-        }
     }
 
     private addPopupHandlingEvents(
@@ -1405,7 +1370,6 @@ export class MapContainer {
                 previewDetails,
             );
         }
-        this.startHoverHighlight(layer);
         this.display.popupElement = leafletLayer;
     }
 
@@ -1415,7 +1379,6 @@ export class MapContainer {
      * 2. A "hard" close, which means a new popup needs to be opened right away, and there's no time for a fadeout.
      */
     private closeMarkerPopup(hardClose: boolean) {
-        this.endHoverHighlight();
         // A boundary region's popup is pinned by selecting the region, so closing
         // the popup (by any path) must also drop the persistent region highlight.
         this.clearBoundarySelection();
@@ -1949,7 +1912,13 @@ export class MapContainer {
     }
 
     addZoomButtons() {
-        if (this.viewSettings.showZoomButtons && !this.state.lock) {
+        // Gated on BOTH the global user setting (off by default — keeps the map
+        // clean for keyboard zooming) and the per-view opt-out flag.
+        if (
+            this.settings.showZoomButtons &&
+            this.viewSettings.showZoomButtons &&
+            !this.state.lock
+        ) {
             this.display.zoomControls = leaflet.control
                 .zoom({
                     position: 'topright',
@@ -2007,65 +1976,40 @@ export class MapContainer {
         this.modalController?.focus();
     }
 
-    startHoverHighlight(markerToFocus: BaseGeoLayer) {
-        if (!this.state.showLinks) return;
-        this.display.mapDiv.addClass('mv-fade-active');
-        for (const marker of this.display.layers.layers) {
-            if (
-                markerToFocus &&
-                marker instanceof FileMarker &&
-                this.getGeoLayer(marker)
-            ) {
-                const geoLayer = this.getGeoLayer(marker);
-                const parent =
-                    this.display.clusterGroup.getVisibleParent(geoLayer);
-                const visibleLeafletMarker = parent || geoLayer;
-                const element = visibleLeafletMarker.getElement();
-                const shouldBeVisible =
-                    marker === markerToFocus ||
-                    (markerToFocus.layerType === 'fileMarker' &&
-                        marker.isLinkedTo(markerToFocus as FileMarker));
-                if (element) {
-                    // We add two classes, one denoting that generally a fade is active and another to denote
-                    // that a specific marker should be shown. It is done this way because of cluster groups.
-                    // We want a cluster group to be shown if *at least one* of its layers should be shown
-                    if (shouldBeVisible)
-                        element.addClass('mv-fade-marker-shown');
-                }
-                if (marker === markerToFocus) {
-                    for (const edge of marker.edges) {
-                        if (edge.polyline) {
-                            edge.polyline
-                                .getElement()
-                                ?.addClass('mv-fade-edge-shown');
-                        }
-                    }
-                }
-            }
-        }
+    /**
+     * Open one of the keyboard-command modals (Shift+F/V/L/P/E). Each mounts a
+     * Svelte component into an Obsidian modal, passing this container as `view`
+     * so the modal reads/writes state through the public map API.
+     */
+    private openKeyboardModal(component: any) {
+        new SvelteModal(
+            component,
+            this.app,
+            this.plugin,
+            this.settings,
+            { view: this },
+            ['mv-kbd-modal'],
+        ).open();
     }
 
-    endHoverHighlight() {
-        this.display.mapDiv.removeClass('mv-fade-active');
-        for (const marker of this.display.layers.layers) {
-            const geoLayer = this.getGeoLayer(marker);
-            if (geoLayer && geoLayer instanceof leaflet.Marker) {
-                const parent =
-                    this.display.clusterGroup.getVisibleParent(geoLayer);
-                const visibleLeafletMarker = parent || geoLayer;
-                const element = visibleLeafletMarker.getElement();
-                if (element) element.removeClasses(['mv-fade-marker-shown']);
-                if (marker instanceof FileMarker) {
-                    for (const edge of marker.edges) {
-                        if (edge.polyline) {
-                            edge.polyline
-                                .getElement()
-                                ?.removeClass('mv-fade-edge-shown');
-                        }
-                    }
-                }
-            }
-        }
+    public openFiltersModal() {
+        this.openKeyboardModal(FiltersModal);
+    }
+
+    public openViewModal() {
+        this.openKeyboardModal(ViewModal);
+    }
+
+    public openLayersModal() {
+        this.openKeyboardModal(LayersModal);
+    }
+
+    public openPresetsModal() {
+        this.openKeyboardModal(PresetsModal);
+    }
+
+    public openEditModal() {
+        this.openKeyboardModal(EditModal);
     }
 
     createTileLayer(

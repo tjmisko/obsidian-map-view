@@ -89,6 +89,11 @@ export type PluginSettings = {
     modalMapInteraction: boolean;
     // How much +/- and the zoom buttons change the map zoom.
     zoomStep: number;
+    // The larger zoom step used by +/- while Alt/Meta (Option) is held.
+    zoomStepBig: number;
+    // When on, the +/- zoom buttons are shown on the map. Off by default so the
+    // map stays clean for keyboard-driven zooming.
+    showZoomButtons: boolean;
 };
 
 export type DepracatedFields = {
@@ -139,7 +144,6 @@ export type LegacyUrlParsingRule = UrlParsingRule & {
 export type MapControlsSections = {
     filtersDisplayed: boolean;
     viewDisplayed: boolean;
-    linksDisplayed: boolean;
     layersDisplayed: boolean;
     presetsDisplayed: boolean;
     editDisplayed: boolean;
@@ -214,8 +218,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
         embeddedHeight: 300,
         autoFit: false,
         lock: false,
-        showLinks: false,
-        linkColor: 'red',
         markerLabels: 'off',
         editMode: false,
         // Seeded from the boundaryLayers below whose enabledByDefault is true.
@@ -363,7 +365,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     mapControlsSections: {
         filtersDisplayed: true,
         viewDisplayed: true,
-        linksDisplayed: false,
         layersDisplayed: false,
         presetsDisplayed: false,
         editDisplayed: false,
@@ -418,6 +419,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     handleGeoJsonCodeBlocks: true,
     modalMapInteraction: true,
     zoomStep: 0.5,
+    zoomStepBig: 2.0,
+    showZoomButtons: false,
 };
 
 export function convertLegacyMarkerIcons(

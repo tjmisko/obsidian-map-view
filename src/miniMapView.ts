@@ -20,7 +20,6 @@ export class MiniMapView extends BaseMapView {
             showFilters: false,
             showView: true,
             viewTabType: 'mini',
-            showLinks: false,
             showEmbeddedControls: false,
             showPresets: false,
             showEdit: false,

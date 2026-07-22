@@ -19,7 +19,6 @@ export class MainMapView extends BaseMapView {
             showFilters: true,
             showView: true,
             viewTabType: 'regular',
-            showLinks: true,
             showEmbeddedControls: false,
             showPresets: true,
             showEdit: true,

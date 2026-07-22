@@ -88,6 +88,47 @@ a.mv-icon-button.on {
     background-color: var(--background-modifier-border-focus) !important;
 }
 
+/* Theme-aware map controls: the right-side control bars (zoom, lock, search,
+   routing, edit, ...) take Obsidian's theme surface instead of Leaflet's stock
+   white, so they read as dark in a dark theme and light in a light theme.
+   Scoped under .leaflet-container to reliably out-specify Leaflet's defaults. */
+.leaflet-container .leaflet-bar a,
+.leaflet-container .leaflet-bar a:link,
+.leaflet-container .leaflet-bar a:visited {
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    border-bottom-color: var(--background-modifier-border);
+}
+
+.leaflet-container .leaflet-bar a:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.leaflet-container .leaflet-bar {
+    border-color: var(--background-modifier-border);
+}
+
+/* Bottom-right attribution: smaller, dimmed and theme-aware so the
+   OpenStreetMap credit stays legible but unobtrusive. */
+.leaflet-container .leaflet-control-attribution {
+    background: var(--background-primary) !important;
+    color: var(--text-faint) !important;
+    font-size: 9px !important;
+    line-height: 1.4;
+    padding: 0 5px !important;
+    opacity: 0.55;
+    border-top-left-radius: 4px;
+}
+
+.leaflet-container .leaflet-control-attribution:hover {
+    opacity: 1;
+}
+
+.leaflet-container .leaflet-control-attribution a {
+    color: var(--text-muted) !important;
+}
+
 .settings-dense-button {
     margin-right: 0;
 }
@@ -234,15 +275,6 @@ a.mv-icon-button.on {
 
 .map-view-highlight {
     filter: drop-shadow(0 0 10px blue);
-}
-
-.mv-fade-active .leaflet-marker-icon:not(.mv-fade-marker-shown) {
-    filter: grayscale(100%);
-    opacity: 0.5;
-}
-
-.mv-fade-active path.leaflet-interactive:not(.mv-fade-edge-shown) {
-    opacity: 0.1;
 }
 
 div.map-view-highlight.marker-cluster {

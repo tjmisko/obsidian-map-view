@@ -21,10 +21,6 @@ export type MapState = {
     autoFit: boolean;
     /** Do not allow panning & zooming the map */
     lock: boolean;
-    /** Whether to show links as edges on the map */
-    showLinks: boolean;
-    /** Color to use for edges */
-    linkColor: string;
     /** Marker labels */
     markerLabels: 'off' | 'left' | 'right';
     editMode: boolean;
@@ -96,8 +92,6 @@ export function areStatesEqual(
         state1.embeddedHeight === state2.embeddedHeight &&
         state1.autoFit === state2.autoFit &&
         state1.lock === state2.lock &&
-        state1.linkColor == state2.linkColor &&
-        state1.showLinks == state2.showLinks &&
         state1.followActiveNote == state2.followActiveNote &&
         state1.followMyLocation == state2.followMyLocation &&
         (state1.markerLabels || 'off') == (state2.markerLabels || 'off') &&
@@ -119,8 +113,6 @@ export function stateToRawObject(state: MapState) {
         chosenMapSource: state.chosenMapSource,
         autoFit: state.autoFit,
         lock: state.lock,
-        showLinks: state.showLinks,
-        linkColor: state.linkColor,
         markerLabels: state.markerLabels,
         enabledBoundaryLayerIds: state.enabledBoundaryLayerIds ?? [],
         ...(state.embeddedHeight && { embeddedHeight: state.embeddedHeight }),
@@ -147,11 +139,6 @@ export function stateFromParsedUrl(obj: any) {
             obj.chosenMapSource != null ? parseInt(obj.chosenMapSource) : null,
         autoFit: obj?.autoFit,
         lock: obj?.lock,
-        showLinks:
-            obj.showLinks != null
-                ? obj.showLinks === 'true' || obj.showLinks === true
-                : false,
-        linkColor: obj?.linkColor,
         markerLabels: obj?.markerLabels,
         // query-string collapses a single-element array to a scalar and omits
         // an empty one, so normalize back to an array (defaulting to []).

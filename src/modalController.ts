@@ -21,7 +21,11 @@ export type EscapeAction = 'blur' | 'exitEdit' | 'closePopup' | 'none';
  * table pure data (design §2.1).
  */
 export interface ModalActionContext {
-    /** The configured zoom step (`settings.zoomStep`), used by `+`/`-`. */
+    /**
+     * The effective zoom step for `+`/`-`. This is `settings.zoomStepBig` when
+     * Alt/Meta was held for the keystroke (a bigger jump), otherwise
+     * `settings.zoomStep`.
+     */
     zoomStep: number;
     /** True when Shift was held for this keystroke (pan/zoom a larger step). */
     shift: boolean;
@@ -35,6 +39,18 @@ export interface ModalActionContext {
     toggleEdit(): void;
     /** Focus the query/filter box (enters Insert). */
     focusQuery(): void;
+    /** Open the Filters modal (Shift+F). */
+    openFilters(): void;
+    /** Open the View-options modal (Shift+V). */
+    openView(): void;
+    /** Open the Layers fuzzy-toggle modal (Shift+L). */
+    openLayers(): void;
+    /** Open the Presets fuzzy modal (Shift+P). */
+    openPresets(): void;
+    /** Open the Edit-tools modal (Shift+E). */
+    openEdit(): void;
+    /** Toggle the visibility of the top-left map controls panel (Shift+M). */
+    toggleControls(): void;
 }
 
 export type ModalAction = (ctx: ModalActionContext) => void;
@@ -61,6 +77,11 @@ export const PAN_STEP_PX = 80;
 export const PAN_STEP_BIG_MULTIPLIER = 3;
 /** Fallback zoom step when `settings.zoomStep` is unset (matches WU-1 default). */
 export const DEFAULT_ZOOM_STEP = 0.5;
+/**
+ * Fallback big zoom step when `settings.zoomStepBig` is unset. Used by `+`/`-`
+ * while Alt/Meta is held, for a coarser jump than the normal step.
+ */
+export const DEFAULT_ZOOM_STEP_BIG = 2.0;
 
 /**
  * The entire modal binding set as data. Adding a binding is a one-line entry
@@ -88,6 +109,16 @@ export const KEYMAP: ModalKeyBinding[] = [
     { mode: 'normal', key: 'f', action: (c) => c.fit() },
     { mode: 'normal', key: 'e', action: (c) => c.toggleEdit() },
     { mode: 'normal', key: '/', action: (c) => c.focusQuery() },
+    // Command namespace — the *uppercase* first letters, i.e. Shift+<letter>.
+    // Registered shift-agnostic (no `shift` field): the key value 'F' already
+    // distinguishes them from the lowercase 'f' pan/fit bindings, and matching
+    // regardless of Shift keeps them working under Caps Lock too.
+    { mode: 'normal', key: 'F', action: (c) => c.openFilters() },
+    { mode: 'normal', key: 'V', action: (c) => c.openView() },
+    { mode: 'normal', key: 'L', action: (c) => c.openLayers() },
+    { mode: 'normal', key: 'P', action: (c) => c.openPresets() },
+    { mode: 'normal', key: 'E', action: (c) => c.openEdit() },
+    { mode: 'normal', key: 'M', action: (c) => c.toggleControls() },
 ];
 
 /** Build the O(1) lookup key for a (mode, key, shift) triple. */
@@ -236,16 +267,27 @@ export class ModalController {
         return this.host.settings?.zoomStep ?? DEFAULT_ZOOM_STEP;
     }
 
-    /** Build the {@link ModalActionContext} for a keystroke. */
-    private buildActionContext(shift: boolean): ModalActionContext {
+    private zoomStepBig(): number {
+        return this.host.settings?.zoomStepBig ?? DEFAULT_ZOOM_STEP_BIG;
+    }
+
+    /**
+     * Build the {@link ModalActionContext} for a keystroke. `big` (Alt/Meta
+     * held) selects the coarser {@link zoomStepBig} for `+`/`-`.
+     */
+    private buildActionContext(
+        shift: boolean,
+        big: boolean = false,
+    ): ModalActionContext {
         const map = this.host.display.map;
-        const zoomStep = this.zoomStep();
+        const zoomStep = big ? this.zoomStepBig() : this.zoomStep();
         return {
             zoomStep,
             shift,
             zoomBy: (delta) => map.setZoom(map.getZoom() + delta),
-            pan: (dx, dy, big) => {
-                const step = PAN_STEP_PX * (big ? PAN_STEP_BIG_MULTIPLIER : 1);
+            pan: (dx, dy, panBig) => {
+                const step =
+                    PAN_STEP_PX * (panBig ? PAN_STEP_BIG_MULTIPLIER : 1);
                 map.panBy([dx * step, dy * step]);
             },
             fit: () => {
@@ -258,6 +300,27 @@ export class ModalController {
             },
             focusQuery: () => {
                 this.host.display.controls?.focusQueryBox?.();
+            },
+            // The modal openers live on MapContainer (added alongside the modal
+            // components); cast through `any` so this module doesn't hard-depend
+            // on them at compile time (mirrors the closePopup idiom below).
+            openFilters: () => {
+                (this.host as any).openFiltersModal?.();
+            },
+            openView: () => {
+                (this.host as any).openViewModal?.();
+            },
+            openLayers: () => {
+                (this.host as any).openLayersModal?.();
+            },
+            openPresets: () => {
+                (this.host as any).openPresetsModal?.();
+            },
+            openEdit: () => {
+                (this.host as any).openEditModal?.();
+            },
+            toggleControls: () => {
+                this.host.display.controls?.toggleControlsVisibility?.();
             },
         };
     }
@@ -272,7 +335,9 @@ export class ModalController {
         const binding = lookupBinding(this.computeMode(), e.key, e.shiftKey);
         if (binding) {
             e.preventDefault();
-            binding.action(this.buildActionContext(e.shiftKey));
+            binding.action(
+                this.buildActionContext(e.shiftKey, e.altKey || e.metaKey),
+            );
         }
         this.refreshBadge();
     }

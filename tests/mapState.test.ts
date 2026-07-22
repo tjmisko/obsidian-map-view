@@ -26,8 +26,6 @@ function baseState(): MapState {
         embeddedHeight: 0,
         autoFit: false,
         lock: false,
-        showLinks: false,
-        linkColor: '#ff0000',
         markerLabels: 'off',
         editMode: false,
         enabledBoundaryLayerIds: [],
@@ -75,7 +73,7 @@ describe('mergeStates', () => {
         const s2: Partial<MapState> = { query: 'test' };
         const merged = mergeStates(s1, s2);
         expect(merged.chosenMapSource).toBe(s1.chosenMapSource);
-        expect(merged.linkColor).toBe(s1.linkColor);
+        expect(merged.mapZoom).toBe(s1.mapZoom);
     });
 
     it('returns a new object (not same reference as either input)', () => {

@@ -36,7 +36,6 @@ export class FileMarker extends BaseGeoLayer {
     public location: leaflet.LatLng;
     public icon?: leaflet.Icon<IconOptions>;
     public opacity: number = 1.0;
-    private _edges: Edge[] = [];
 
     /**
      * Construct a new FileMarker object
@@ -54,50 +53,6 @@ export class FileMarker extends BaseGeoLayer {
         return !this.fileLine;
     }
 
-    // Important note: an Edge(u, v) object exists both in the list of u and in the list of v
-    get edges(): Edge[] {
-        return this._edges;
-    }
-
-    addEdge(edge: Edge) {
-        this._edges.push(edge);
-    }
-
-    // Remove the polylines, which are the physical representation of the edges on the map, without removing
-    // the logical edges
-    removePolylines() {
-        for (const edge of this._edges) {
-            edge.polyline?.remove();
-            edge.polyline = null;
-        }
-    }
-
-    // Removes the edges that belong to this marker. This requires removing both sides of the edge.
-    // Note that since markers are plugin-global, in different open map views with different filters,
-    // a marker may have different polylines, with different markers it connects to!
-    removeEdges(listToRemoveFrom: leaflet.Polyline[]) {
-        for (const edge of this._edges) {
-            // Make sure the 2nd marker of the edge doesn't keep holding the edge
-            if (edge.marker1 != this) edge.marker1._edges.remove(edge);
-            if (edge.marker2 != this) edge.marker2._edges.remove(edge);
-            // Remove the polyline from the container's polylines map
-            if (edge.polyline) listToRemoveFrom.remove(edge.polyline);
-            // Remove the polyline of the edge
-            edge.polyline?.remove();
-            edge.polyline = null;
-        }
-        this._edges.length = 0;
-    }
-
-    // Returns true if the two markers are linked by an existing edge
-    isLinkedTo(marker: FileMarker) {
-        return (
-            this.edges.find((edge) => {
-                return edge.marker1 == marker || edge.marker2 == marker;
-            }) != undefined
-        );
-    }
-
     isSame(other: BaseGeoLayer): boolean {
         return (
             other instanceof FileMarker &&
@@ -106,8 +61,6 @@ export class FileMarker extends BaseGeoLayer {
             this.fileLocation === other.fileLocation &&
             this.fileLine === other.fileLine &&
             this.extraName === other.extraName &&
-            // TODO: need to compare the edges themselves
-            this.edges.length == other.edges.length &&
             this.icon?.options?.iconUrl === other.icon?.options?.iconUrl &&
             // @ts-ignore
             this.icon?.options?.icon === other.icon?.options?.icon &&
@@ -140,31 +93,6 @@ export class FileMarker extends BaseGeoLayer {
             plugin.displayRulesCache,
             plugin.iconFactory,
         );
-    }
-}
-
-export type FileWithMarkers = {
-    file: TFile;
-    markers: FileMarker[];
-};
-
-export class Edge {
-    /** The first location of the edge */
-    public marker1: FileMarker;
-    /** The second location of the edge */
-    public marker2: FileMarker;
-    /** The leaflet polyline of the edge. An edge may exist only logically without a polyline (after being generated
-     * from the map markers) */
-    public polyline?: leaflet.Polyline;
-
-    constructor(
-        marker1: FileMarker,
-        marker2: FileMarker,
-        polyline: leaflet.Polyline = null,
-    ) {
-        this.marker1 = marker1;
-        this.marker2 = marker2;
-        this.polyline = polyline;
     }
 }
 
@@ -325,106 +253,6 @@ export function getFrontMatterLocation(
         }
     }
     return null;
-}
-
-export function addEdgesToMarkers(
-    markers: BaseGeoLayer[],
-    app: App,
-    showLinks: boolean,
-    allPolylines: leaflet.Polyline[],
-) {
-    if (!showLinks) return;
-
-    // The given list of markers above resides in some set of files, and we want to transverse just these files and figure out the
-    // links between them.
-    // Step 1: build a map of the markers we received with the files they belong to.
-    // (along the way we clear the edges from the markers, rebuilding them soon)
-    // Note: the map between layers and files already exists, in LayerCache. However what we want here is a map that includes
-    // *only the markers we just received*. It might be a filtered, much smaller group than all the markers in the system.
-    let filesWithMarkersMap: Map<string, FileWithMarkers> = new Map();
-    for (const marker of markers) {
-        if (marker instanceof FileMarker) {
-            let path = marker.file.path;
-            if (!filesWithMarkersMap.has(path)) {
-                filesWithMarkersMap.set(path, {
-                    file: marker.file,
-                    markers: [],
-                });
-            }
-            marker.removeEdges(allPolylines);
-            filesWithMarkersMap.get(path).markers.push(marker);
-        }
-    }
-    // Step 2: add edges between markers of linked files, keeping a map of visited notes to avoid cycles.
-    let nodesSeen: Set<string> = new Set();
-    for (let fileWithMarkers of filesWithMarkersMap.values()) {
-        addEdgesFromFile(
-            markers,
-            fileWithMarkers,
-            filesWithMarkersMap,
-            app,
-            nodesSeen,
-        );
-    }
-}
-
-/**
- * Add all the edges for a given file, i.e. the edges for all the markers that link out from this file.
- */
-function addEdgesFromFile(
-    markers: BaseGeoLayer[],
-    source: FileWithMarkers,
-    filesWithMarkersMap: Map<string, FileWithMarkers>,
-    app: App,
-    nodesSeen: Set<string>,
-) {
-    const file = source.file;
-    const path = file.path;
-    if (nodesSeen.has(path)) {
-        // Bail out if a cycle (loop) has been detected
-        return;
-    }
-    nodesSeen.add(path);
-    const fileCache = app.metadataCache.getFileCache(file);
-    const allLinks = [
-        ...(fileCache?.links ?? []),
-        ...(fileCache?.frontmatterLinks ?? []),
-    ];
-    // What's done here is as follows.
-    // - For every link in the source file to 'destinationFile'...
-    //   - For every marker X in 'destinationFile'...
-    //     - If the link points to marker X, link *all* of the source file markers to destination marker X.
-    for (const link of allLinks) {
-        let destination = app.metadataCache.getFirstLinkpathDest(
-            link.link,
-            path,
-        );
-        if (destination?.path && filesWithMarkersMap.has(destination.path)) {
-            // Both the source file and the destination file have markers;
-            // Let's transverse these markers and connect the ones that are actually linked.
-            // It can be all the pairs between the files, but in case of more specialized links (heading or block links),
-            // it can be just some of them.
-            let destinationFileWithMarkers = filesWithMarkersMap.get(
-                destination.path,
-            );
-            for (let destinationMarker of destinationFileWithMarkers.markers) {
-                if (isLayerLinkedFrom(destinationMarker, link, app)) {
-                    // The link really points to destinationMarker, therefore all the markers in the source file
-                    // are to be linked to this destination marker.
-                    for (let sourceMarker of source.markers) {
-                        if (sourceMarker != destinationMarker) {
-                            const edge = new Edge(
-                                sourceMarker,
-                                destinationMarker,
-                            );
-                            sourceMarker.addEdge(edge);
-                            destinationMarker.addEdge(edge);
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 /**

@@ -7,9 +7,11 @@ tractable.
 
 - **Upstream baseline:** `esm7/obsidian-map-view` `master` @ `1008df8` ("Skill
   update"), package version **6.1.4**.
-- **Nature of the deviation:** one cohesive feature arc — **boundary layers**
-  (note-sourced political/region overlays) — plus the interaction, styling, and
-  per-note-color work that grew out of it.
+- **Nature of the deviation:** two feature arcs — **boundary layers**
+  (note-sourced political/region overlays, plus the interaction, styling, and
+  per-note-color work that grew out of it) and **keyboard-first map interaction**
+  (a modal/vim-like control model with single-key command modals). The fork also
+  **removes** the upstream Links (marker-edge) feature.
 
 Keep this file updated when you add another deviation. To see the raw diff at
 any time: `git diff origin/master..HEAD`.
@@ -139,7 +141,78 @@ winning over display rules and the boundary layer's own color.
 | `tests/__mocks__/obsidian.ts`                                                             | `getAllTags` mock returns the cache's tags.                                                                                                                         |
 | `tests/displayRulesCache.test.ts`, `tests/geojsonLayer.test.ts`, `tests/mapState.test.ts` | Coverage for the above.                                                                                                                                             |
 
-## 7. Rebasing / maintenance notes
+## 7. Feature: Keyboard-first map interaction
+
+Builds on the existing `ModalController` (Normal/Edit/Insert modes, wheel-pan,
+`+`/`-` zoom, Escape chain) with a **single-key command namespace** for
+driving the whole map from the keyboard, plus supporting UI cleanups.
+
+**Command modals** — in Normal mode, the _uppercase_ first letters (i.e.
+`Shift+<letter>`) open keyboard-navigable modals. They are registered
+shift-agnostic in `KEYMAP`, so the lowercase vim bindings (`f`=fit,
+`e`=toggle-draw, `hjkl`=pan) are untouched — no conflict.
+
+| Key       | Command | Modal                                                               |
+| --------- | ------- | ------------------------------------------------------------------- |
+| `Shift+F` | Filters | Live query editor (reuses `QueryTextField`)                         |
+| `Shift+V` | View    | Numbered option list (map source, mode, labels, follow, fit, reset) |
+| `Shift+L` | Layers  | Fuzzy list of boundary layers; digits 1-9 toggle, stays open        |
+| `Shift+P` | Presets | Fuzzy preset list; digit/Enter applies and closes                   |
+| `Shift+E` | Edit    | On-map edit tools (drawing mode, note/heading/tags)                 |
+| `Shift+M` | Menu    | Toggles the top-left controls panel (minimize)                      |
+
+All modals mount a Svelte component via `SvelteModal`, receive the
+`MapContainer` as `view`, and apply changes through `view.highLevelSetViewState`
+(which re-renders the map and re-syncs the controls panel). The two fuzzy
+modals share `KeyboardNavList.svelte` — a reusable numbered/fuzzy list where
+digits 1-9 are _row shortcuts_ (never filter text), arrows move the highlight,
+Enter chooses, Escape closes, and `stayOpen` decides toggle-vs-select.
+
+**Big zoom step** — holding Alt/Option (or Cmd/Ctrl) with `+`/`-` uses
+`settings.zoomStepBig` (default `2.0`) instead of `settings.zoomStep`, for a
+coarser jump. `ModalController.buildActionContext(shift, big)` computes the
+effective step; `KEYMAP` is unchanged.
+
+**Zoom buttons off by default** — new `settings.showZoomButtons` (default
+`false`). `MapContainer.addZoomButtons` now gates on it _and_ the per-view
+`viewSettings.showZoomButtons`, so the `+`/`-` buttons are hidden unless the user
+opts in.
+
+**Theme-aware controls + attribution** (`styles.css`) — the right-side Leaflet
+control bars now take Obsidian's theme surface (`--background-*`/`--text-*`),
+and the bottom-right attribution is shrunk/dimmed and theme-aware. The "Leaflet"
+prefix flag is dropped via `attributionControl.setPrefix(false)` in `createMap`.
+
+**New files:** `src/components/KeyboardNavList.svelte`,
+`FiltersModal.svelte`, `ViewModal.svelte`, `LayersModal.svelte`,
+`PresetsModal.svelte`, `EditModal.svelte`. **Touched:** `modalController.ts`
+(command bindings + big-zoom), `viewControls.ts` +
+`ViewControlsPanel.svelte` (`toggleControlsVisibility`/`toggleMinimized`),
+`mapContainer.ts` (`open*Modal` methods, zoom-button gate, attribution prefix),
+`settings.ts` + `settingsTab.ts` (`showZoomButtons`, `zoomStepBig`).
+**Tests:** `tests/modalController.test.ts` extended for the command bindings and
+the effective zoom step.
+
+## 8. Removal: Links (marker-edge) feature
+
+The upstream **Links** feature (drawing polyline edges between linked notes'
+markers, with a "show links" toggle + edge color, and a hover "fade" highlight)
+is removed on this fork — it freed the `L` key for the Layers command and isn't
+used here.
+
+- Dropped `MapState.showLinks`/`linkColor`, `MapControlsSections.linksDisplayed`,
+  and the `ViewSettings.showLinks` per-view flag; the "Links" controls section;
+  the Bases "Links" config group; and the `.mv-fade-*` CSS.
+- Removed the edge model + builders in `src/fileMarker.ts` (`Edge`,
+  `addEdgesToMarkers`, `addEdgesFromFile`, `_edges`/`edges`/`removeEdges`/
+  `isLinkedTo`, `FileWithMarkers`) and the polyline/hover-highlight logic in
+  `src/mapContainer.ts` (`buildPolylines`, `startHoverHighlight`,
+  `endHoverHighlight`).
+- **Kept** (NOT part of Links): the `linkedfrom:`/`linkedto:` query operators and
+  `fileMarker.isLayerLinkedFrom` (shared with the query engine).
+- Deleted `docs/links-view.md` + its screenshot.
+
+## 9. Rebasing / maintenance notes
 
 - The feature deliberately plugs into upstream's existing pipeline rather than
   forking it, so most upstream changes merge cleanly.

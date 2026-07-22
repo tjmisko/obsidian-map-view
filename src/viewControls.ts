@@ -103,6 +103,11 @@ export class ViewControls {
     public focusQueryBox() {
         if (this.controlPanel) this.controlPanel.focusQueryBox();
     }
+
+    /** Toggle the top-left controls panel between minimized and expanded. */
+    public toggleControlsVisibility() {
+        if (this.controlPanel) this.controlPanel.toggleMinimized();
+    }
 }
 
 export class SearchControl extends leaflet.Control {

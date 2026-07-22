@@ -20,6 +20,12 @@ function makeCtx(overrides: Partial<ModalActionContext> = {}) {
         fit: 0,
         toggleEdit: 0,
         focusQuery: 0,
+        openFilters: 0,
+        openView: 0,
+        openLayers: 0,
+        openPresets: 0,
+        openEdit: 0,
+        toggleControls: 0,
     };
     const ctx: ModalActionContext = {
         zoomStep: 0.5,
@@ -34,6 +40,24 @@ function makeCtx(overrides: Partial<ModalActionContext> = {}) {
         },
         focusQuery: () => {
             calls.focusQuery++;
+        },
+        openFilters: () => {
+            calls.openFilters++;
+        },
+        openView: () => {
+            calls.openView++;
+        },
+        openLayers: () => {
+            calls.openLayers++;
+        },
+        openPresets: () => {
+            calls.openPresets++;
+        },
+        openEdit: () => {
+            calls.openEdit++;
+        },
+        toggleControls: () => {
+            calls.toggleControls++;
         },
         ...overrides,
     };
@@ -156,6 +180,70 @@ describe('lookupBinding', () => {
     it('should only contain normal-mode bindings', () => {
         expect(KEYMAP.length).toBeGreaterThan(0);
         expect(KEYMAP.every((b) => b.mode === 'normal')).toBe(true);
+    });
+});
+
+describe('command bindings (uppercase / Shift+letter)', () => {
+    // Each command key maps to its opener. They are registered shift-agnostic:
+    // the key value 'F' already distinguishes them from lowercase, and matching
+    // regardless of Shift keeps them working under Caps Lock.
+    const cases: Array<[string, keyof ReturnType<typeof makeCtx>['calls']]> = [
+        ['F', 'openFilters'],
+        ['V', 'openView'],
+        ['L', 'openLayers'],
+        ['P', 'openPresets'],
+        ['E', 'openEdit'],
+        ['M', 'toggleControls'],
+    ];
+
+    for (const [key, expectedCall] of cases) {
+        it(`should map ${key} to ${expectedCall} regardless of Shift`, () => {
+            for (const shift of [true, false]) {
+                const binding = lookupBinding('normal', key, shift);
+                expect(binding, `${key} shift=${shift}`).toBeDefined();
+                const { ctx, calls } = makeCtx();
+                binding!.action(ctx);
+                expect(calls[expectedCall]).toBe(1);
+            }
+        });
+    }
+
+    it('should keep lowercase letters bound to their original actions', () => {
+        // The command namespace uses uppercase, so lowercase f/e/l are unchanged.
+        expect(lookupBinding('normal', 'f', false)!.action).not.toBe(
+            lookupBinding('normal', 'F', false)!.action,
+        );
+        const fit = makeCtx();
+        lookupBinding('normal', 'f', false)!.action(fit.ctx);
+        expect(fit.calls.fit).toBe(1);
+        expect(fit.calls.openFilters).toBe(0);
+
+        const panRight = makeCtx();
+        lookupBinding('normal', 'l', false)!.action(panRight.ctx);
+        expect(panRight.calls.pan).toEqual([[1, 0, false]]);
+        expect(panRight.calls.openLayers).toBe(0);
+    });
+
+    it('should be inert in insert and edit modes', () => {
+        for (const key of ['F', 'V', 'L', 'P', 'E', 'M']) {
+            expect(lookupBinding('insert', key, true)).toBeUndefined();
+            expect(lookupBinding('edit', key, true)).toBeUndefined();
+        }
+    });
+});
+
+describe('big zoom step (Alt/Meta effective step)', () => {
+    // The controller feeds the *effective* step into ctx.zoomStep (the bigger
+    // settings.zoomStepBig when Alt/Meta is held). The +/- actions just consume
+    // it, so a larger ctx.zoomStep produces a larger zoom delta.
+    it('should zoom by the effective step for + and -', () => {
+        const plus = makeCtx({ zoomStep: 2.0 });
+        lookupBinding('normal', '+', true)!.action(plus.ctx);
+        expect(plus.calls.zoomBy).toEqual([2.0]);
+
+        const minus = makeCtx({ zoomStep: 2.0 });
+        lookupBinding('normal', '-', false)!.action(minus.ctx);
+        expect(minus.calls.zoomBy).toEqual([-2.0]);
     });
 });
 

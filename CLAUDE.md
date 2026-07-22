@@ -57,7 +57,7 @@ npm run stylecheck
     - Uses Query system (`src/query.ts`) to match layers via `tag:`, `path:`, `linkedfrom:`, etc.
 
 5. **Map Rendering** (`src/mapContainer.ts`):
-    - `filterAndPrepareMarkers()`: Applies user query filters and builds link edges
+    - `filterAndPrepareMarkers()`: Applies user query filters to select the markers to display
     - `updateMapLayers()`: Diffs old/new layers and updates Leaflet map (reuses unchanged layers)
     - Manages marker clusters, tile layers, and all UI controls
 

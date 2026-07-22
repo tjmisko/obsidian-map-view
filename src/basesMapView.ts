@@ -39,7 +39,6 @@ export class BasesMapView extends BasesView {
             showMapControls: true,
             showFilters: false,
             showView: false,
-            showLinks: false,
             viewTabType: 'regular',
             showEmbeddedControls: false,
             showPresets: false,
@@ -242,24 +241,6 @@ export class BasesMapView extends BasesView {
                     // 	type: 'toggle',
                     // 	default: true
                     // }
-                ],
-            },
-            {
-                displayName: 'Links',
-                type: 'group',
-                items: [
-                    {
-                        displayName: 'Links',
-                        key: 'showLinks',
-                        type: 'toggle',
-                        default: settings.defaultState.showLinks,
-                    },
-                    {
-                        displayName: 'Link Color',
-                        key: 'linkColor',
-                        type: 'text',
-                        default: settings.defaultState.linkColor,
-                    },
                 ],
             },
             {

@@ -120,6 +120,14 @@
         queryField?.focus();
     }
 
+    // Toggle the whole panel between minimized and expanded — the target of the
+    // Shift+M map keyboard command. Mirrors the minimize-button handler.
+    export function toggleMinimized() {
+        minimized = !minimized;
+        settings.mapControlsMinimized = minimized;
+        plugin.saveSettings();
+    }
+
     export function openChooseNote() {
         const dialog = new NoteSelectDialog(
             app,
@@ -436,34 +444,6 @@
                             <option value="right">Right labels</option>
                         </select>
                     {/if}
-                </ViewCollapsibleSection>
-            {/if}
-            {#if viewSettings.showLinks}
-                <ViewCollapsibleSection
-                    headerText="Links"
-                    expanded={settings.mapControlsSections.linksDisplayed}
-                    afterToggle={(expanded) =>
-                        setMapControl('linksDisplayed', expanded)}
-                >
-                    <select
-                        class="dropdown mv-map-control"
-                        value={mapState.showLinks ? 'true' : 'false'}
-                        onchange={(e) =>
-                            (mapState.showLinks =
-                                e.currentTarget.value === 'true')}
-                    >
-                        <option value="false">Off</option>
-                        <option value="true">Show links</option>
-                    </select>
-                    <input
-                        type="text"
-                        class="mv-map-control"
-                        placeholder="color"
-                        bind:value={mapState.linkColor}
-                        contenteditable="true"
-                        title="Color used for lines (edges). Can be any valid HTML color, e.g. 'red' or '#bc11ff'."
-                        style="width: 6em;"
-                    />
                 </ViewCollapsibleSection>
             {/if}
             {#if settings.boundaryLayers?.length > 0}
