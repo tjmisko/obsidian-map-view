@@ -32,7 +32,10 @@ function mockLayer(overrides: Record<string, any> = {}): any {
  * the app for `linkedfrom:` queries, which none of these tests use.
  */
 function makeCache(rules: DisplayRule[]): DisplayRulesCache {
-    const cache = new DisplayRulesCache(null as unknown as App);
+    const cache = new DisplayRulesCache(
+        null as unknown as App,
+        null as unknown as any,
+    );
     cache.build(rules);
     return cache;
 }
@@ -647,7 +650,10 @@ describe('getDefaults isolation', () => {
 
 describe('Error handling', () => {
     it('throws when rules and queries are out of sync', () => {
-        const cache = new DisplayRulesCache(null as unknown as App);
+        const cache = new DisplayRulesCache(
+            null as unknown as App,
+            null as unknown as any,
+        );
         cache.build([PRESET]);
         (cache as any).displayRules.push({ query: 'tag:#x', preset: false });
         expect(() => cache.runOn(mockLayer())).toThrow(/garbled/);

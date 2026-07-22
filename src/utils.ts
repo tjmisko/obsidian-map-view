@@ -332,6 +332,100 @@ export function getFile(app: App, leafToUse?: WorkspaceLeaf): TFile {
 }
 
 /**
+ * The per-note color override: a note can set a frontmatter property (named by
+ * `settings.frontMatterColorKey`, default 'map-color') to a CSS color to control
+ * how it's drawn on the map — its marker, paths, and boundary region. Returns
+ * the trimmed color string, or null when the property is absent/empty.
+ */
+export function getFrontMatterColorOverride(
+    file: TFile,
+    pluginSettings: settings.PluginSettings,
+    app: App,
+): string | null {
+    const key = pluginSettings?.frontMatterColorKey;
+    if (!key || !file || !app?.metadataCache) return null;
+    const frontMatter = app.metadataCache.getFileCache(file)?.frontmatter;
+    const value = frontMatter?.[key];
+    if (typeof value === 'string' && value.trim().length > 0)
+        return value.trim();
+    return null;
+}
+
+/** Even-odd ray-casting: is [lng,lat] inside a single GeoJSON linear ring? */
+function isPointInRing(lng: number, lat: number, ring: number[][]): boolean {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0],
+            yi = ring[i][1];
+        const xj = ring[j][0],
+            yj = ring[j][1];
+        const intersects =
+            yi > lat !== yj > lat &&
+            lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+        if (intersects) inside = !inside;
+    }
+    return inside;
+}
+
+/** Is [lng,lat] inside a Polygon coordinate array (outer ring minus holes)? */
+function isPointInPolygonCoords(
+    lng: number,
+    lat: number,
+    polygon: number[][][],
+): boolean {
+    if (!polygon || polygon.length === 0) return false;
+    if (!isPointInRing(lng, lat, polygon[0])) return false;
+    for (let i = 1; i < polygon.length; i++)
+        if (isPointInRing(lng, lat, polygon[i])) return false; // inside a hole
+    return true;
+}
+
+/**
+ * Whether a lat/lng falls inside a GeoJSON Polygon/MultiPolygon geometry. Used
+ * to find every boundary region stacked under a click. Non-area geometries
+ * (lines, points) are never "containing", so they return false.
+ */
+export function isPointInGeometry(
+    lat: number,
+    lng: number,
+    geometry: any,
+): boolean {
+    if (!geometry) return false;
+    if (geometry.type === 'Polygon')
+        return isPointInPolygonCoords(lng, lat, geometry.coordinates);
+    if (geometry.type === 'MultiPolygon')
+        return geometry.coordinates.some((polygon: number[][][]) =>
+            isPointInPolygonCoords(lng, lat, polygon),
+        );
+    return false;
+}
+
+/** Shoelace area of a ring in raw (lng,lat) units — only for relative sizing. */
+function ringArea(ring: number[][]): number {
+    let area = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++)
+        area += (ring[j][0] + ring[i][0]) * (ring[j][1] - ring[i][1]);
+    return Math.abs(area / 2);
+}
+
+/**
+ * A relative size for a GeoJSON Polygon/MultiPolygon geometry (raw coordinate
+ * units, not real-world area) used only to order nested regions smallest-first.
+ */
+export function geometryArea(geometry: any): number {
+    if (!geometry) return 0;
+    if (geometry.type === 'Polygon')
+        return ringArea(geometry.coordinates[0] ?? []);
+    if (geometry.type === 'MultiPolygon')
+        return geometry.coordinates.reduce(
+            (sum: number, polygon: number[][][]) =>
+                sum + ringArea(polygon[0] ?? []),
+            0,
+        );
+    return 0;
+}
+
+/**
  * Insert a geo link into the editor at the cursor position
  * @param location The geolocation to convert to text and insert
  * @param editor The Obsidian Editor instance

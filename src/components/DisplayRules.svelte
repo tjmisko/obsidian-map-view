@@ -105,7 +105,7 @@
     function layerPreview(name: string) {
         const layer = plugin.layerCache.findName(name);
         if (!layer) return null;
-        const rulesCache = new DisplayRulesCache(app);
+        const rulesCache = new DisplayRulesCache(app, plugin.settings);
         rulesCache.build(rulesCopy);
         const [iconOptions, pathOptions, badgeOptions] =
             rulesCache.runOn(layer);

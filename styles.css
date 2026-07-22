@@ -11,13 +11,22 @@
 
 /*
  * Boundary regions (political layers): a fine border whose fill fades in and
- * border thickens slightly on hover. The base border color/weight/fill-opacity
- * come from each boundary layer's style (as SVG attributes); we only declare the
- * transition and the hover overrides here, so the browser tweens them with no
- * per-frame JS. CSS rules win over Leaflet's presentation attributes, so the
- * hovered values take effect and animate back out on mouseout.
+ * border thickens on hover, and stays filled while the region is "pinned"
+ * (clicked). The base border color/weight/fill-opacity come from each boundary
+ * layer's style (as SVG attributes); we only declare the transition and the
+ * hover/selected overrides here, so the browser tweens them with no per-frame
+ * JS. CSS rules win over Leaflet's presentation attributes, so these values
+ * take effect and animate back out when the class is removed.
+ *
+ * `mv-boundary-hover` is transient mouseover feedback; `mv-boundary-selected` is
+ * driven by selection state (the clicked/pinned region), so it persists while
+ * the pointer moves off the region and onto the pinned note popup.
  */
 .leaflet-interactive.mv-boundary {
+    /* A light-but-visible resting fill so regions read as filled areas, not just
+     * outlines; hover and selection deepen it. The fill color is each layer's
+     * own stroke color (Leaflet derives SVG `fill` from the path color). */
+    fill-opacity: 0.07;
     transition:
         fill-opacity 0.15s ease,
         stroke-width 0.15s ease;
@@ -25,6 +34,10 @@
 .leaflet-interactive.mv-boundary.mv-boundary-hover {
     fill-opacity: 0.12;
     stroke-width: 2;
+}
+.leaflet-interactive.mv-boundary.mv-boundary-selected {
+    fill-opacity: 0.18;
+    stroke-width: 2.5;
 }
 
 .map-view-graph-controls {

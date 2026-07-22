@@ -165,10 +165,12 @@ export class MapContainer {
         highlight: leaflet.Layer = null;
         /** The actual entity that is highlighted, which is either equal to the above, or the cluster group that it belongs to */
         actualHighlight: leaflet.Marker = null;
-        /** Pending hover-intent timer for a boundary region's (debounced) note popup */
-        boundaryPopupTimer: number | null = null;
         /** The SVG path element of the currently hover-highlighted boundary region */
         hoveredBoundaryElement: Element | null = null;
+        /** The currently selected (clicked/pinned) boundary region's Leaflet layer, if any */
+        selectedBoundaryLayer: leaflet.Layer | null = null;
+        /** The SVG path element of the selected boundary region (holds the persistent highlight class) */
+        selectedBoundaryElement: Element | null = null;
         /** The marker used to denote a routing source if any */
         routingSource: leaflet.Marker = null;
         /** The routes added to the map */
@@ -800,6 +802,27 @@ export class MapContainer {
             this.closeMarkerPopup(false);
         });
 
+        // Horizontal mouse-wheel / trackpad scroll pans the map left-right.
+        // Leaflet's scrollWheelZoom consumes vertical (deltaY) scroll for zoom
+        // but ignores horizontal (deltaX) scroll, so we handle it: when the
+        // horizontal component dominates, pan by it and preventDefault so the
+        // browser doesn't do horizontal page-scroll / back-forward navigation.
+        // Gated on dragging being enabled so a locked map ignores it too.
+        this.display.map.getContainer().addEventListener(
+            'wheel',
+            (event: WheelEvent) => {
+                if (!this.display.map.dragging.enabled()) return;
+                if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+                if (event.deltaX === 0) return;
+                event.preventDefault();
+                // deltaMode 1 = lines (tilt wheels); scale to a sensible pixel step.
+                const pixels =
+                    event.deltaMode === 1 ? event.deltaX * 16 : event.deltaX;
+                this.display.map.panBy([pixels, 0], { animate: false });
+            },
+            { passive: false },
+        );
+
         // Build the map right-click context menu
         this.display.map.on(
             'contextmenu',
@@ -1344,11 +1367,9 @@ export class MapContainer {
      */
     private closeMarkerPopup(hardClose: boolean) {
         this.endHoverHighlight();
-        // Cancel a pending hover-intent popup so it can't open after the close.
-        if (this.display.boundaryPopupTimer !== null) {
-            window.clearTimeout(this.display.boundaryPopupTimer);
-            this.display.boundaryPopupTimer = null;
-        }
+        // A boundary region's popup is pinned by selecting the region, so closing
+        // the popup (by any path) must also drop the persistent region highlight.
+        this.clearBoundarySelection();
         this.display.popupDiv.removeClass('visible');
         if (hardClose) {
             this.display.popupElement = null;
@@ -2029,21 +2050,59 @@ export class MapContainer {
             this.app,
         );
         if (boundary) this.ensureBoundaryPane(boundary.level ?? 0);
+        // A per-note `map-color` frontmatter value overrides everything, including
+        // the boundary layer's own color, so it's applied last.
+        const colorOverride = utils.getFrontMatterColorOverride(
+            marker.file,
+            this.settings,
+            this.app,
+        );
         const geoJsonOptions: leaflet.GeoJSONOptions = {
             style: {
                 ...marker.pathOptions,
                 ...(boundary ? boundary.style : {}),
+                ...(colorOverride
+                    ? { color: colorOverride, fillColor: colorOverride }
+                    : {}),
                 bubblingMouseEvents: false, // This lets stuff like the 'contextmenu' event work
             },
             onEachFeature: (feature: any, layer: leaflet.Layer) => {
                 // Features of type 'Point' are handled below
                 if (feature?.geometry?.type !== 'Point') {
-                    if (boundary) this.addBoundaryHoverEvents(layer, marker);
+                    if (boundary)
+                        this.addBoundaryInteractionEvents(layer, marker);
                     else this.addPopupHandlingEvents(layer, marker, 'mouse');
                     layer.on(
                         'contextmenu',
                         (event: leaflet.LeafletMouseEvent) => {
                             let menu = new Menu();
+                            // For boundary regions, let the user reach any region
+                            // in the stack of nested regions under the cursor —
+                            // not just the (smallest) one on top that got the event.
+                            if (boundary) {
+                                const stack =
+                                    this.boundaryRegionsContainingPoint(
+                                        event.latlng,
+                                    );
+                                if (stack.length > 1) {
+                                    for (const region of stack) {
+                                        menu.addItem((item: MenuItem) => {
+                                            item.setTitle(
+                                                `Select region: ${region.name}`,
+                                            );
+                                            item.setIcon('map-pin');
+                                            item.setSection('boundary-stack');
+                                            item.onClick(() => {
+                                                this.pinBoundaryRegion(
+                                                    region.marker,
+                                                    region.featureLayer,
+                                                    event,
+                                                );
+                                            });
+                                        });
+                                    }
+                                }
+                            }
                             menus.addPathContextMenuItems(
                                 menu,
                                 marker,
@@ -2148,32 +2207,48 @@ export class MapContainer {
     }
 
     /**
-     * Hover behavior for a boundary region: toggle a CSS class for the subtle
-     * fill/border animation (the browser tweens it — no per-frame JS), and open
-     * the note popup only after a short hover-intent delay so sweeping across
-     * many regions doesn't spam the (heavier) markdown render.
+     * Interaction for a boundary region:
+     *  - Mouseover/mouseout toggle a CSS class for the subtle fill/border
+     *    animation (the browser tweens it — no per-frame JS). This is only a
+     *    discoverability cue; it no longer opens the note popup.
+     *  - Click toggles the region "pinned": the note popup opens and stays open,
+     *    and the region keeps a persistent highlight driven by selection state
+     *    (not the :hover rules) so it remains visible while the mouse moves onto
+     *    the popup. Clicking the pinned region again — or clicking the map, or
+     *    closing the popup — unpins it.
      */
-    private addBoundaryHoverEvents(
+    private addBoundaryInteractionEvents(
         leafletLayer: leaflet.Layer,
         layer: GeoJsonLayer,
     ) {
-        if (utils.isMobile(this.app)) {
-            // No hover on mobile — keep the standard tap-to-popup behavior.
-            this.addPopupHandlingEvents(leafletLayer, layer, 'mouse');
-            return;
+        if (!utils.isMobile(this.app)) {
+            leafletLayer.on(
+                'mouseover',
+                (_event: leaflet.LeafletMouseEvent) => {
+                    this.setBoundaryHover(leafletLayer);
+                },
+            );
+            leafletLayer.on('mouseout', (_event: leaflet.LeafletMouseEvent) => {
+                this.clearBoundaryHover(leafletLayer);
+            });
         }
-        leafletLayer.on('mouseover', (event: leaflet.LeafletMouseEvent) => {
-            this.setBoundaryHover(leafletLayer);
-            if (this.display.boundaryPopupTimer !== null)
-                window.clearTimeout(this.display.boundaryPopupTimer);
-            this.display.boundaryPopupTimer = window.setTimeout(() => {
-                this.display.boundaryPopupTimer = null;
+        leafletLayer.on('click', (event: leaflet.LeafletMouseEvent) => {
+            // Boundary paths set bubblingMouseEvents:false, but stop the DOM
+            // event too so the map's click handler can't close the popup we're
+            // about to open.
+            event.originalEvent.stopPropagation();
+            const wasSelected =
+                this.display.selectedBoundaryLayer === leafletLayer;
+            if (wasSelected) {
+                // Clicking the pinned region again unpins it (closeMarkerPopup
+                // also clears the selection highlight).
+                this.closeMarkerPopup(true);
+            } else {
+                // showMarkerPopups hard-closes any prior popup first (which
+                // clears a previous selection), so set the new selection after.
                 this.showMarkerPopups(layer, leafletLayer, event, 'mouse');
-            }, consts.BOUNDARY_HOVER_POPUP_DELAY_MS);
-        });
-        leafletLayer.on('mouseout', (_event: leaflet.LeafletMouseEvent) => {
-            this.clearBoundaryHover(leafletLayer);
-            this.closeMarkerPopup(false);
+                this.selectBoundary(leafletLayer);
+            }
         });
     }
 
@@ -2200,6 +2275,96 @@ export class MapContainer {
         if (element) element.classList.remove(consts.BOUNDARY_HOVER_CLASS_NAME);
         if (this.display.hoveredBoundaryElement === element)
             this.display.hoveredBoundaryElement = null;
+    }
+
+    /**
+     * Pin a boundary region: give it the persistent selection highlight, first
+     * clearing any previously selected region. The highlight is a CSS class on
+     * the SVG path, so it survives the mouse leaving the region.
+     */
+    private selectBoundary(leafletLayer: leaflet.Layer) {
+        if (this.display.selectedBoundaryLayer !== leafletLayer)
+            this.clearBoundarySelection();
+        const element: Element | undefined = (
+            leafletLayer as any
+        ).getElement?.();
+        if (element) {
+            element.classList.add(consts.BOUNDARY_SELECTED_CLASS_NAME);
+            this.display.selectedBoundaryElement = element;
+        }
+        this.display.selectedBoundaryLayer = leafletLayer;
+    }
+
+    /** Drop the persistent highlight of the currently selected boundary region, if any. */
+    private clearBoundarySelection() {
+        if (this.display.selectedBoundaryElement)
+            this.display.selectedBoundaryElement.classList.remove(
+                consts.BOUNDARY_SELECTED_CLASS_NAME,
+            );
+        this.display.selectedBoundaryElement = null;
+        this.display.selectedBoundaryLayer = null;
+    }
+
+    /**
+     * Every boundary region whose polygon contains the given point, across all
+     * boundary layers, sorted smallest-first (most specific on top). Powers the
+     * right-click "Select region" menu so a larger region hidden under a smaller
+     * one on top is still reachable.
+     */
+    private boundaryRegionsContainingPoint(latlng: leaflet.LatLng): Array<{
+        marker: GeoJsonLayer;
+        featureLayer: leaflet.Layer;
+        name: string;
+        area: number;
+    }> {
+        const results: Array<{
+            marker: GeoJsonLayer;
+            featureLayer: leaflet.Layer;
+            name: string;
+            area: number;
+        }> = [];
+        for (const layer of this.display.layers.layers) {
+            if (!(layer instanceof GeoJsonLayer)) continue;
+            if (
+                !getBoundaryLayerForLayer(
+                    layer,
+                    this.settings.boundaryLayers,
+                    this.app,
+                )
+            )
+                continue;
+            const geoLayer = this.getGeoLayer(layer) as any;
+            if (!geoLayer || typeof geoLayer.getLayers !== 'function') continue;
+            for (const featureLayer of geoLayer.getLayers()) {
+                const geometry = (featureLayer as any).feature?.geometry;
+                if (!utils.isPointInGeometry(latlng.lat, latlng.lng, geometry))
+                    continue;
+                results.push({
+                    marker: layer,
+                    featureLayer,
+                    name:
+                        (featureLayer as any).feature?.properties?.name ||
+                        layer.file?.basename ||
+                        'Region',
+                    area: utils.geometryArea(geometry),
+                });
+            }
+        }
+        results.sort((a, b) => a.area - b.area);
+        return results;
+    }
+
+    /**
+     * Pin a specific boundary region (from the right-click stack menu): open its
+     * note popup and give it the persistent selection highlight, same as a click.
+     */
+    private pinBoundaryRegion(
+        marker: GeoJsonLayer,
+        featureLayer: leaflet.Layer,
+        event: leaflet.LeafletMouseEvent,
+    ) {
+        this.showMarkerPopups(marker, featureLayer, event, 'mouse');
+        this.selectBoundary(featureLayer);
     }
 
     private getGeoLayer<T extends BaseGeoLayer>(

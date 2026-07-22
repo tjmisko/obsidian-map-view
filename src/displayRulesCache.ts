@@ -1,16 +1,23 @@
 import { App } from 'obsidian';
-import { type DisplayRule, type IconBadgeOptions } from 'src/settings';
+import {
+    type DisplayRule,
+    type IconBadgeOptions,
+    type PluginSettings,
+} from 'src/settings';
 import { Query } from 'src/query';
 import { BaseGeoLayer } from 'src/baseGeoLayer';
+import * as utils from 'src/utils';
 import { type PathOptions } from 'leaflet';
 
 export class DisplayRulesCache {
     private displayRuleQueries: Query[] = [];
     private displayRules: DisplayRule[] = [];
     private app: App;
+    private settings: PluginSettings;
 
-    constructor(app: App) {
+    constructor(app: App, settings: PluginSettings) {
         this.app = app;
+        this.settings = settings;
     }
 
     public build(displayRules: DisplayRule[]) {
@@ -70,6 +77,24 @@ export class DisplayRulesCache {
                     if (rule.badgeOptions) badgeOptions.push(rule.badgeOptions);
                 }
             }
+        }
+        // A per-note `map-color` frontmatter override wins over all display
+        // rules, coloring the note's marker and its paths/regions.
+        const colorOverride = layer.file
+            ? utils.getFrontMatterColorOverride(
+                  layer.file,
+                  this.settings,
+                  this.app,
+              )
+            : null;
+        if (colorOverride) {
+            iconDetails = Object.assign({}, iconDetails, {
+                markerColor: colorOverride,
+            });
+            pathOptions = Object.assign({}, pathOptions, {
+                color: colorOverride,
+                fillColor: colorOverride,
+            });
         }
         return [iconDetails, pathOptions, badgeOptions];
     }

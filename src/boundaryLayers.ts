@@ -1,4 +1,4 @@
-import { App } from 'obsidian';
+import { App, TFile, getAllTags } from 'obsidian';
 import { Query } from 'src/query';
 import { BaseGeoLayer } from 'src/baseGeoLayer';
 import { type BoundaryLayer } from 'src/settings';
@@ -94,4 +94,30 @@ export function getBoundaryLayerForLayer(
  */
 export function boundaryPaneName(level: number): string {
     return `mv-boundary-pane-${level ?? 0}`;
+}
+
+/**
+ * The id of the boundary layer a note itself belongs to — i.e. the note's own
+ * nesting level. Used so an embedded mapview inside a boundary note (e.g. a
+ * `#boundary/state` note) can default that layer on. When the note matches
+ * several boundary layers, the most-nested one (highest `level`) wins, matching
+ * how the region itself is drawn. Returns null when the note matches none.
+ *
+ * The note is tested via a lightweight probe carrying its file and tags, which
+ * is all the default `tag:#boundary/<level>` queries need.
+ */
+export function boundaryLayerIdForNote(
+    file: TFile,
+    boundaryLayers: BoundaryLayer[],
+    app: App,
+): string | null {
+    if (!file) return null;
+    const cache = app.metadataCache.getFileCache(file);
+    const tags = getAllTags(cache) ?? [];
+    const probe = {
+        file,
+        tags,
+        layerType: 'geojson',
+    } as unknown as BaseGeoLayer;
+    return getBoundaryLayerForLayer(probe, boundaryLayers, app)?.id ?? null;
 }

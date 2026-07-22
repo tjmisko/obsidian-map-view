@@ -25,6 +25,9 @@ export type PluginSettings = {
     zoomOnGoFromNote: number;
     mapSources: TileSource[];
     frontMatterKey: string;
+    // Frontmatter property whose value (a CSS color) overrides how a note is
+    // drawn on the map — its marker, paths, and boundary region. Default 'map-color'.
+    frontMatterColorKey: string;
     chosenMapMode?: MapLightDark;
     autoZoom: boolean;
     onlyOneExpanded: boolean;
@@ -215,6 +218,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
             'boundary-country',
             'boundary-state',
             'boundary-county',
+            'boundary-city',
         ],
     },
     savedStates: [],
@@ -292,6 +296,18 @@ export const DEFAULT_SETTINGS: PluginSettings = {
                 fillOpacity: 0,
             },
         },
+        {
+            id: 'boundary-city',
+            name: 'Cities',
+            query: 'tag:#boundary/city',
+            level: 3,
+            enabledByDefault: true,
+            style: {
+                color: '#8e44ad',
+                weight: 1,
+                fillOpacity: 0,
+            },
+        },
     ],
     zoomOnGoFromNote: 15,
     autoZoom: true,
@@ -364,6 +380,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
         },
     ],
     frontMatterKey: 'location',
+    frontMatterColorKey: 'map-color',
     chosenMapMode: 'auto',
     saveHistory: true,
     letZoomBeyondMax: false,

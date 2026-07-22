@@ -35,6 +35,7 @@ import { EmbeddedMap } from 'src/embeddedMap';
 import { MapContainer } from 'src/mapContainer';
 import { IconFactory } from 'src/markerIcons';
 import { DisplayRulesCache } from 'src/displayRulesCache';
+import { boundaryLayerIdForNote } from 'src/boundaryLayers';
 import {
     askForLocation,
     isLocationPossiblyAvailable,
@@ -123,7 +124,7 @@ export default class MapViewPlugin extends Plugin {
         this.editorLinkReplacePlugin = getLinkReplaceEditorPlugin(this);
         this.registerEditorExtension(this.editorLinkReplacePlugin);
 
-        this.displayRulesCache = new DisplayRulesCache(this.app);
+        this.displayRulesCache = new DisplayRulesCache(this.app, this.settings);
         this.displayRulesCache.build(this.settings.displayRules);
 
         // Currently not in use; the feature is frozen until I have the time to work on its various quirks
@@ -186,10 +187,20 @@ export default class MapViewPlugin extends Plugin {
             ) => {
                 let state = null;
                 let customViewSettings = null;
+                // Whether the code block itself pins a non-empty boundary-layer
+                // selection. If it doesn't (missing, or an empty [] — which is
+                // what getCodeBlock writes for "no explicit choice"), an embed
+                // inside a boundary note defaults that note's own level on (see
+                // below). Treating empty as unspecified means a boundary note's
+                // embed always shows at least its own region.
+                let codeBlockSetBoundaryLayers = false;
                 try {
                     let rawStateObj = null;
                     ({ customViewSettings, ...rawStateObj } =
                         JSON.parse(source));
+                    codeBlockSetBoundaryLayers =
+                        Array.isArray(rawStateObj?.enabledBoundaryLayerIds) &&
+                        rawStateObj.enabledBoundaryLayerIds.length > 0;
                     state = stateFromParsedUrl(rawStateObj);
                 } catch (e) {
                     el.setText(
@@ -215,6 +226,26 @@ export default class MapViewPlugin extends Plugin {
                         this.settings.defaultState,
                         state,
                     );
+                    // When the code block doesn't pin boundary layers, an embed
+                    // inside a boundary note (e.g. a #boundary/state note)
+                    // defaults that note's own level on, so the region you're
+                    // reading about is shown without a manual toggle.
+                    if (!codeBlockSetBoundaryLayers) {
+                        const sourceFile = this.app.vault.getAbstractFileByPath(
+                            ctx.sourcePath,
+                        );
+                        if (sourceFile instanceof TFile) {
+                            const noteLevelId = boundaryLayerIdForNote(
+                                sourceFile,
+                                this.settings.boundaryLayers,
+                                this.app,
+                            );
+                            if (noteLevelId)
+                                fullState.enabledBoundaryLayerIds = [
+                                    noteLevelId,
+                                ];
+                        }
+                    }
                     await map.open(fullState);
                 }
             },
@@ -1038,7 +1069,33 @@ export default class MapViewPlugin extends Plugin {
     async loadSettings() {
         this.settings = Object.assign({}, structuredClone(DEFAULT_SETTINGS));
         Object.assign(this.settings, await this.loadData());
+        this.ensureDefaultBoundaryLayers();
         this.settings = makeSettingsReactive(this.settings);
+    }
+
+    /**
+     * Seed any built-in boundary layer (by stable id) that the saved settings
+     * don't already have. Loading is a shallow merge, so a user whose data.json
+     * predates a newly-added default layer (e.g. Cities) would otherwise never
+     * see it. This only appends missing defaults; it never edits or removes the
+     * user's existing layers, so custom names/queries/colors are preserved.
+     */
+    private ensureDefaultBoundaryLayers() {
+        if (!Array.isArray(this.settings.boundaryLayers)) {
+            this.settings.boundaryLayers = structuredClone(
+                DEFAULT_SETTINGS.boundaryLayers,
+            );
+            return;
+        }
+        const existingIds = new Set(
+            this.settings.boundaryLayers.map((layer) => layer.id),
+        );
+        for (const defaultLayer of DEFAULT_SETTINGS.boundaryLayers) {
+            if (!existingIds.has(defaultLayer.id))
+                this.settings.boundaryLayers.push(
+                    structuredClone(defaultLayer),
+                );
+        }
     }
 
     /** Save the plugin settings to Obsidian's cache so it can be reused later. */

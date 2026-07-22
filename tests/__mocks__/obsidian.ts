@@ -221,8 +221,10 @@ export const Platform = {
     isAndroidApp: false,
 };
 
-export function getAllTags(_cache: any): string[] {
-    return [];
+export function getAllTags(cache: any): string[] {
+    // Mirror Obsidian: return the cache's collected tags (frontmatter + inline).
+    // The real API returns `#tag`-form strings; tests provide them the same way.
+    return cache?.tags ?? [];
 }
 
 export function getFrontMatterInfo(_content: string) {

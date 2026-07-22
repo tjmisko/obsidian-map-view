@@ -3,6 +3,7 @@ import {
     filterOutDisabledBoundaryLayers,
     getBoundaryLayerForLayer,
     boundaryPaneName,
+    boundaryLayerIdForNote,
 } from 'src/boundaryLayers';
 import { type BoundaryLayer } from 'src/settings';
 
@@ -172,5 +173,69 @@ describe('boundaryPaneName', () => {
         expect(boundaryPaneName(0)).toBe('mv-boundary-pane-0');
         expect(boundaryPaneName(2)).toBe('mv-boundary-pane-2');
         expect(boundaryPaneName(0)).not.toBe(boundaryPaneName(1));
+    });
+});
+
+describe('boundaryLayerIdForNote', () => {
+    const country = boundary({
+        id: 'boundary-country',
+        query: 'tag:#boundary/country',
+        level: 0,
+    });
+    const state = boundary({
+        id: 'boundary-state',
+        query: 'tag:#boundary/state',
+        level: 1,
+    });
+    const city = boundary({
+        id: 'boundary-city',
+        query: 'tag:#boundary/city',
+        level: 3,
+    });
+
+    // App whose metadata cache returns the given tags for any file.
+    function appWithTags(tags: string[]): any {
+        return {
+            metadataCache: { getFileCache: () => ({ tags }) },
+        };
+    }
+
+    const file: any = { name: 'CA.md', path: 'CA.md', basename: 'CA' };
+
+    it("returns the id of the boundary layer matching the note's own tag", () => {
+        const result = boundaryLayerIdForNote(
+            file,
+            [country, state, city],
+            appWithTags(['#boundary/state']),
+        );
+        expect(result).toBe('boundary-state');
+    });
+
+    it('returns the most-nested id when the note matches several levels', () => {
+        const result = boundaryLayerIdForNote(
+            file,
+            [country, state, city],
+            appWithTags(['#boundary/state', '#boundary/city']),
+        );
+        expect(result).toBe('boundary-city');
+    });
+
+    it('returns null when the note matches no boundary layer', () => {
+        const result = boundaryLayerIdForNote(
+            file,
+            [country, state, city],
+            appWithTags(['#restaurant']),
+        );
+        expect(result).toBeNull();
+    });
+
+    it('returns null for a missing file', () => {
+        expect(
+            boundaryLayerIdForNote(
+                null as any,
+                [state],
+                appWithTags(['#boundary/state']),
+            ),
+        ).toBeNull();
     });
 });

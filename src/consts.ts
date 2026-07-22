@@ -44,11 +44,13 @@ export const MIN_REAL_TIME_LOCATION_ZOOM = 13;
 
 export const HIGHLIGHT_CLASS_NAME = 'map-view-highlight';
 
-// CSS classes for boundary-region hover highlighting (see styles.css)
+// CSS classes for boundary-region highlighting (see styles.css).
+// `hover` is the transient mouseover feedback; `selected` is the persistent
+// highlight of a clicked (pinned) region, driven by selection state rather than
+// the :hover rules so it stays visible while the mouse is over the pinned note.
 export const BOUNDARY_CLASS_NAME = 'mv-boundary';
 export const BOUNDARY_HOVER_CLASS_NAME = 'mv-boundary-hover';
-// Hover-intent delay before opening a boundary region's (heavier) note popup
-export const BOUNDARY_HOVER_POPUP_DELAY_MS = 100;
+export const BOUNDARY_SELECTED_CLASS_NAME = 'mv-boundary-selected';
 
 export const DEFAULT_EMBEDDED_HEIGHT = 300;
 export const MIN_QUICK_EMBED_ZOOM = 8;
